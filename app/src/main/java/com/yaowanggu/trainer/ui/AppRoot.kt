@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Tune
@@ -67,7 +67,7 @@ fun AppRoot(vm: TrainerViewModel) {
                 },
                 actions = {
                     IconButton(onClick = { screen = Screen.HELP }) {
-                        Icon(Icons.Filled.HelpOutline, contentDescription = "使用教程")
+                        Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "使用教程")
                     }
                 }
             )

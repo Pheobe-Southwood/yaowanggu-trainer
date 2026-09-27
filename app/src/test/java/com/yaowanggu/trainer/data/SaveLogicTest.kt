@@ -63,8 +63,10 @@ class SaveLogicTest {
         assertArrayEquals(byteArrayOf(1), MessagePack.serialize(MpValue.Int(1)))
         // u8 for 200
         assertArrayEquals(byteArrayOf(0xCC.toByte(), 200.toByte()), MessagePack.serialize(MpValue.Int(200)))
-        // negative int8
-        assertArrayEquals(byteArrayOf(0xD0.toByte(), 0xFB.toByte()), MessagePack.serialize(MpValue.Int(-5)))
+        // -5 落在 negative fixint 区间，只写一个字节
+        assertArrayEquals(byteArrayOf(0xFB.toByte()), MessagePack.serialize(MpValue.Int(-5)))
+        // -200 用 int8 编码
+        assertArrayEquals(byteArrayOf(0xD0.toByte(), 56.toByte()), MessagePack.serialize(MpValue.Int(-200)))
     }
 
     @Test
@@ -218,10 +220,12 @@ class SaveLogicTest {
             )),
         ))
         val st = SaveAnalyzer.analyze(MessagePack.serialize(root))
-        val ref = SaveEditor.FieldRef.TreeField(st.bestFace!!.loc, 4)
-        assertEquals(9L, SaveEditor.readField(st, ref))   // 嘴巴
-        val ref2 = SaveEditor.FieldRef.TreeField(st.bestFace!!.loc, 20)
-        assertEquals(10L, SaveEditor.readField(st, ref2))  // 幼后发
+        val eye = SaveEditor.FieldRef.TreeField(st.bestFace!!.loc, 4)
+        assertEquals(6L, SaveEditor.readField(st, eye))   // 眼睛 = 6
+        val mouth = SaveEditor.FieldRef.TreeField(st.bestFace!!.loc, 5)
+        assertEquals(9L, SaveEditor.readField(st, mouth))  // 嘴巴 = 9
+        val childBack = SaveEditor.FieldRef.TreeField(st.bestFace!!.loc, 20)
+        assertEquals(10L, SaveEditor.readField(st, childBack))  // 幼后发 = 10
     }
 
     @Test
