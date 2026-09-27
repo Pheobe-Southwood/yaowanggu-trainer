@@ -7,11 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.QueryStats
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,7 +67,7 @@ fun AppRoot(vm: TrainerViewModel) {
                 },
                 actions = {
                     IconButton(onClick = { screen = Screen.HELP }) {
-                        Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "使用教程")
+                        Icon(Icons.Filled.Info, contentDescription = "使用教程")
                     }
                 }
             )
@@ -84,20 +84,20 @@ fun AppRoot(vm: TrainerViewModel) {
                     selected = screen == Screen.FACE,
                     onClick = { screen = Screen.FACE },
                     enabled = state.faceReady,
-                    icon = { Icon(Icons.Filled.Face, null) },
+                    icon = { Icon(Icons.Filled.Person, null) },
                     label = { Text("五官") },
                 )
                 NavigationBarItem(
                     selected = screen == Screen.ATTR,
                     onClick = { screen = Screen.ATTR },
                     enabled = state.charRecord != null || state.rawCharOffset != null,
-                    icon = { Icon(Icons.Filled.Tune, null) },
+                    icon = { Icon(Icons.Filled.Settings, null) },
                     label = { Text("属性") },
                 )
                 NavigationBarItem(
                     selected = screen == Screen.DIAG,
                     onClick = { screen = Screen.DIAG },
-                    icon = { Icon(Icons.Filled.QueryStats, null) },
+                    icon = { Icon(Icons.Filled.List, null) },
                     label = { Text("诊断") },
                 )
             }
