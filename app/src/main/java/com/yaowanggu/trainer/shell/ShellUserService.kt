@@ -65,7 +65,7 @@ class ShellUserService : IUserService.Stub() {
     }
 
     override fun isRunning(packageName: String): Boolean {
-        val out = exec("pidof $packageName")
+        val out = try { exec("pidof $packageName") } catch (_: Throwable) { "" }
         return out.trim().isNotEmpty()
     }
 

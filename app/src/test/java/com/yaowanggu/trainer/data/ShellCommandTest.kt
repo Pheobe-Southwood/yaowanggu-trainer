@@ -47,4 +47,13 @@ class ShellCommandTest {
             assert(cmd.contains(needle)) { "命令里缺少: $needle\n$cmd" }
         }
     }
+
+    @Test
+    fun listSavesCmd_syntaxValid() {
+        val cmd = ShellBackend.listSavesCmd()
+        val proc = ProcessBuilder("sh", "-n", "-c", cmd).redirectErrorStream(true).start()
+        val out = proc.inputStream.bufferedReader().readText()
+        val exit = proc.waitFor()
+        assertEquals("Shell 脚本语法检查失败: $out", 0, exit)
+    }
 }
