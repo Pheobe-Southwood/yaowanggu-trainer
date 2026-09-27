@@ -70,7 +70,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // Shizuku: run privileged file ops as shell without root
-    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:api:13.1.5") {
+        exclude(group = "dev.rikka.shizuku", module = "aidl")
+    }
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
