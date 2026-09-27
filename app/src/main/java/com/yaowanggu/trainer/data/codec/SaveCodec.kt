@@ -105,7 +105,8 @@ object SaveCodec {
 
     // ---------- helpers ----------
 
-    private fun tryDecodeLz4Block(ext: MpValue.Ext): DecodedSave? = try {
+    private fun tryDecodeLz4Block(ext: MpValue.Ext): DecodedSave? {
+        return try {
         val r = MpReader(ext.data)
         val lenV = r.readValue() as? MpValue.Int ?: return null
         val len = lenV.v
@@ -114,12 +115,14 @@ object SaveCodec {
         val inner = Lz4.decompressBlock(rest, len.toInt())
         val tree = MessagePack.tryParse(inner) ?: return null
         DecodedSave(inner, "msgpack+lz4block", tree)
-    } catch (e: Throwable) {
-        AppLog.w("codec: lz4block decode failed: ${e.message}")
-        null
+        } catch (e: Throwable) {
+            AppLog.w("codec: lz4block decode failed: ${e.message}")
+            null
+        }
     }
 
-    private fun tryDecodeLz4BlockArray(arr: MpValue.Arr): DecodedSave? = try {
+    private fun tryDecodeLz4BlockArray(arr: MpValue.Arr): DecodedSave? {
+        return try {
         val first = arr.items.firstOrNull() as? MpValue.Ext ?: return null
         if (first.type != LZ4_BLOCK_ARRAY) return null
         val chunkCount = arr.items.size - 1
@@ -139,8 +142,9 @@ object SaveCodec {
         val inner = out.toByteArray()
         val tree = MessagePack.tryParse(inner) ?: return null
         DecodedSave(inner, "msgpack+lz4blockarray", tree)
-    } catch (e: Throwable) {
-        AppLog.w("codec: lz4blockarray decode failed: ${e.message}")
-        null
+        } catch (e: Throwable) {
+            AppLog.w("codec: lz4blockarray decode failed: ${e.message}")
+            null
+        }
     }
 }
