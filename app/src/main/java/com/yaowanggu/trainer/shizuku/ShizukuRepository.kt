@@ -101,7 +101,7 @@ object ShizukuRepository {
         }
         lastArgs = args
         lastConn = conn
-        return@synchronized try {
+        val result = try {
             Shizuku.bindUserService(args, conn)
             d
         } catch (e: Throwable) {
@@ -110,6 +110,7 @@ object ShizukuRepository {
             d.complete(null)
             d
         }
+        return@synchronized result
     }
 
     fun unbind(context: Context) {
