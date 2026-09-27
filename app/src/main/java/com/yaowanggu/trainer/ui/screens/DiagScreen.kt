@@ -143,6 +143,6 @@ private fun preview(v: MpValue): String = when (v) {
     is MpValue.Float64 -> v.v.toString()
     is MpValue.Str -> "\"${v.v.take(40)}\""
     is MpValue.Bin -> "bin(${v.v.size})"
-    is MpValue.Ext -> "ext(${v.type},${v.v.size})"
+    is MpValue.Ext -> "ext(${v.type},${v.data.size})"
     else -> v.toString()
 }

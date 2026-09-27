@@ -14,13 +14,6 @@ import java.io.RandomAccessFile
  */
 class ShellUserService : IUserService.Stub() {
 
-    /** Shizuku API v13 会用带 Context 的构造器实例化（R8 下需保留）。 */
-    @Suppress("unused")
-    constructor()
-
-    @Suppress("unused", "UNUSED_PARAMETER")
-    constructor(context: android.content.Context)
-
     override fun id(): String = "uid=${android.os.Process.myUid()} pid=${android.os.Process.myPid()}"
 
     override fun destroy() {
