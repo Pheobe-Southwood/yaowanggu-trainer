@@ -65,8 +65,9 @@ class SaveLogicTest {
         assertArrayEquals(byteArrayOf(0xCC.toByte(), 200.toByte()), MessagePack.serialize(MpValue.Int(200)))
         // -5 落在 negative fixint 区间，只写一个字节
         assertArrayEquals(byteArrayOf(0xFB.toByte()), MessagePack.serialize(MpValue.Int(-5)))
-        // -200 用 int8 编码
-        assertArrayEquals(byteArrayOf(0xD0.toByte(), 56.toByte()), MessagePack.serialize(MpValue.Int(-200)))
+        // -100 用 int8 编码；-200 超出 int8，用 int16
+        assertArrayEquals(byteArrayOf(0xD0.toByte(), 156.toByte()), MessagePack.serialize(MpValue.Int(-100)))
+        assertArrayEquals(byteArrayOf(0xD1.toByte(), 0xFF.toByte(), 0x38.toByte()), MessagePack.serialize(MpValue.Int(-200)))
     }
 
     @Test
