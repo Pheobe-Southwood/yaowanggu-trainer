@@ -6,23 +6,23 @@ interface IUserService {
     void destroy() = 16777114;
 
     /** 返回 "uid=2000 pid=..." 之类的身份信息，用于确认以 shell 运行 */
-    String id();
+    String id() = 1;
 
     /** 执行 shell 命令，返回 stdout（退出码非 0 时抛异常） */
-    String exec(String command);
+    String exec(String command) = 2;
 
     /** 读整个文件 */
-    byte[] readFile(String path);
+    byte[] readFile(String path) = 3;
 
     /** 覆写文件（原地写，保留 inode/owner） */
-    void writeFile(String path, in byte[] data);
+    void writeFile(String path, in byte[] data) = 4;
 
     /** 复制文件（用于 .bak 备份） */
-    void copyFile(String from, String to);
+    void copyFile(String from, String to) = 5;
 
     /** 列出 nfile*.save：每行 "槽位|大小|mtime|路径" */
-    String[] listSaveSlots();
+    String[] listSaveSlots() = 6;
 
     /** 包名对应的进程是否在运行 */
-    boolean isRunning(String packageName);
+    boolean isRunning(String packageName) = 7;
 }
