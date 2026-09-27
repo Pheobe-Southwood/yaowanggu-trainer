@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yaowanggu.trainer.ui.TrainerViewModel
@@ -31,6 +32,7 @@ import com.yaowanggu.trainer.ui.TrainerViewModel
 @Composable
 fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
     val state by vm.state.collectAsState()
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -50,7 +52,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { vm.refreshShizuku() }) { Text("刷新状态") }
+                        Button(onClick = { vm.refreshShizuku(context) }) { Text("刷新状态") }
                         if (state.binderAlive && !state.permissionOk) {
                             Button(onClick = { vm.requestShizukuPermission() }) { Text("授权 Shizuku") }
                         }
@@ -70,7 +72,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                         false -> Text("游戏未运行，可以安全读写存档。")
                     }
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { vm.loadSlots() }, enabled = state.permissionOk && !state.loading) {
+                    Button(onClick = { vm.loadSlots(context) }, enabled = state.permissionOk && !state.loading) {
                         Text("刷新存档列表")
                     }
                 }
@@ -125,7 +127,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                         Text("${slot.size} 字节 · 修改于 ${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(slot.mtimeSec * 1000))}",
                             style = MaterialTheme.typography.bodySmall)
                     }
-                    OutlinedButton(onClick = { vm.openSlot(slot) }, enabled = state.permissionOk) { Text("打开") }
+                    OutlinedButton(onClick = { vm.openSlot(context, slot) }, enabled = state.permissionOk) { Text("打开") }
                     if (state.faceReady && slot.path == state.slotPath) {
                         Spacer(Modifier.width(8.dp))
                         Button(onClick = onOpenFace) { Text("去改脸") }
@@ -157,7 +159,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                         Text("有 ${state.pending.size} 项待写入的修改", fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { vm.writeBack() }, enabled = !state.loading) { Text("写回存档") }
+                            Button(onClick = { vm.writeBack(context) }, enabled = !state.loading) { Text("写回存档") }
                             OutlinedButton(onClick = { vm.discardPending() }) { Text("放弃修改") }
                         }
                     }

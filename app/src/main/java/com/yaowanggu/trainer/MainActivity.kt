@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        vm.refreshShizuku()
+        vm.refreshShizuku(this)
     }
 
     override fun onDestroy() {

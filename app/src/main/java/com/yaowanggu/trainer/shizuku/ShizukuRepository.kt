@@ -1,39 +1,51 @@
 package com.yaowanggu.trainer.shizuku
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.IBinder
+import android.util.Log
+import com.yaowanggu.trainer.shell.IUserService
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
 
 /**
- * Thin wrapper around the Shizuku API. Everything here runs shell (uid 2000) commands
- * so we can read/write the game's Android/data save files on Android 11+ without root.
+ * Shizuku 用户服务封装。
+ *
+ * Shizuku API 13 起 `Shizuku.newProcess` 已不公开，改用官方「用户服务」机制：
+ * 把 [IUserService] 实现交给 Shizuku，由 Shizuku 以 shell(uid 2000) 身份实例化
+ * 后交回 Binder；之后所有文件操作都在那个进程里执行，
+ * 从而读写被 Android 11+ Scoped Storage 限制的 /sdcard/Android/data/... 目录。
  */
 object ShizukuRepository {
 
+    private const val TAG = "ShizukuRepository"
     const val GAME_PACKAGE = "com.hydrozoa.yyg"
-    const val GAME_SAVE_DIR = "/sdcard/Android/data/$GAME_PACKAGE/files"
-    const val SAVE_PREFIX = "nfile"
-    const val SAVE_SUFFIX = ".save"
-    private const val REQUEST_CODE_PERMISSION = 1001
+    const val SERVICE_CLASS = "com.yaowanggu.trainer.shell.ShellUserService"
 
-    data class SaveSlot(
-        val slot: Int,
-        val path: String,
-        val size: Long,
-        val mtimeSec: Long,
-    )
+    data class SaveSlot(val slot: Int, val path: String, val size: Long, val mtimeSec: Long)
 
-    data class ExecResult(val exit: Int, val stdout: ByteArray, val stderr: String) {
-        override fun equals(other: Any?) = other is ExecResult && exit == other.exit && stdout.contentEquals(other.stdout)
-        override fun hashCode() = 31 * exit + stdout.contentHashCode()
-    }
+    private val _service = MutableStateFlow<IUserService?>(null)
+    val service: StateFlow<IUserService?> = _service.asStateFlow()
 
-    /** ---------------- binder + permission state ---------------- */
+    private val lock = Any()
+    private var pending: CompletableDeferred<IUserService?>? = null
+    private var lastArgs: Shizuku.UserServiceArgs? = null
+    private var lastConn: ServiceConnection? = null
+
+    // ---------------- binder + permission ----------------
 
     fun binderAlive(): Boolean = try { Shizuku.pingBinder() } catch (e: Throwable) { false }
 
     fun permissionGranted(): Boolean = try {
-        if (!binderAlive()) false
-        else Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        binderAlive() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     } catch (e: Throwable) { false }
 
     fun requestPermission(listener: (Boolean) -> Unit) {
@@ -42,85 +54,104 @@ object ShizukuRepository {
         val l = object : Shizuku.OnRequestPermissionResultListener {
             override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
                 Shizuku.removeRequestPermissionResultListener(this)
-                listener(requestCode == REQUEST_CODE_PERMISSION &&
-                    grantResult == PackageManager.PERMISSION_GRANTED)
+                listener(grantResult == PackageManager.PERMISSION_GRANTED)
             }
         }
         Shizuku.addRequestPermissionResultListener(l)
-        Shizuku.requestPermission(REQUEST_CODE_PERMISSION)
+        Shizuku.requestPermission(1001)
     }
 
-    /** ---------------- shell execution ---------------- */
+    // ---------------- binding the user service ----------------
 
-    private fun sh(cmd: String): ExecResult {
-        val p = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
-        val out = p.inputStream.readBytes()           // read fully before waitFor
-        val err = p.errorStream.readBytes().toString(Charsets.UTF_8)
-        val exit = try { p.waitFor() } catch (e: Throwable) { -1 }
-        return ExecResult(exit, out, err)
+    /** 确保用户服务已绑定（幂等）。挂起直到拿到服务，失败抛异常。 */
+    suspend fun ensureBound(context: Context): IUserService {
+        _service.value?.let { return it }
+        val d = startBind(context)
+        withTimeoutOrNull(20_000) { d.await() }
+        _service.value?.let { return it }
+        throw IllegalStateException("绑定 Shizuku 用户服务失败：请确认 Shizuku 正在运行并已授权")
     }
 
-    fun runShell(cmd: String): ExecResult = sh(cmd)
-
-    fun gameRunning(): Boolean {
-        val r = sh("pidof $GAME_PACKAGE")
-        return r.exit == 0 && r.stdout.toString(Charsets.UTF_8).trim().isNotEmpty()
-    }
-
-    // ---------------- save files ----------------
-
-    /** List nfile*.save slots. Returns empty list if the directory doesn't exist. */
-    fun listSaveSlots(): List<SaveSlot> {
-        val dir = GAME_SAVE_DIR
-        val cmd = "if [ -d $dir ]; then " +
-            "for f in $dir/nfile*.save; do " +
-            "[ -e \"$f\" ] || continue; " +
-            "s=\$(stat -c %s \"$f\" 2>/dev/null); m=\$(stat -c %Y \"$f\" 2>/dev/null); " +
-            "echo \"\${s:-0}|\${m:-0}|$f\"; " +
-            "done; fi"
-        val text = sh(cmd).stdout.toString(Charsets.UTF_8)
-        val slots = ArrayList<SaveSlot>()
-        text.lineSequence().forEach { line ->
-            val t = line.trim()
-            if (t.isEmpty()) return@forEach
-            val parts = t.split("|")
-            if (parts.size < 3) return@forEach
-            val size = parts[0].trim().toLongOrNull() ?: 0L
-            val mtime = parts[1].trim().toLongOrNull() ?: 0L
-            val path = parts[2].trim()
-            val name = path.substringAfterLast('/')
-            val slot = name.removePrefix(SAVE_PREFIX).removeSuffix(SAVE_SUFFIX).toIntOrNull()
-                ?: return@forEach
-            slots.add(SaveSlot(slot, path, size, mtime))
+    private fun startBind(context: Context): CompletableDeferred<IUserService?> = synchronized(lock) {
+        _service.value?.let { s ->
+            return@synchronized CompletableDeferred<IUserService?>().apply { complete(s) }
         }
-        return slots.sortedWith(compareBy({ -it.mtimeSec }, { it.slot }))
+        pending?.let { return@synchronized it }
+
+        val d = CompletableDeferred<IUserService?>()
+        pending = d
+        val app = context.applicationContext
+        val args = Shizuku.UserServiceArgs(
+            ComponentName(app.packageName, SERVICE_CLASS)
+        ).daemon(false).version(1)
+        val conn = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+                Log.i(TAG, "user service connected")
+                val s = IUserService.Stub.asInterface(binder)
+                _service.value = s
+                synchronized(lock) { pending = null }
+                d.complete(s)
+            }
+            override fun onServiceDisconnected(name: ComponentName) {
+                Log.w(TAG, "user service disconnected")
+                _service.value = null
+                synchronized(lock) { pending = null; lastConn = null }
+                if (!d.isCompleted) d.complete(null)
+            }
+        }
+        lastArgs = args
+        lastConn = conn
+        return@synchronized try {
+            Shizuku.bindUserService(args, conn)
+            d
+        } catch (e: Throwable) {
+            Log.e(TAG, "bindUserService failed", e)
+            synchronized(lock) { pending = null }
+            d.complete(null)
+            d
+        }
     }
 
-    fun readFile(path: String): ByteArray {
-        val r = sh("cat '$path'")
-        if (r.exit != 0) error("读取失败: ${r.stderr.ifBlank { "exit ${r.exit}" }}")
-        return r.stdout
+    fun unbind(context: Context) {
+        val conn = lastConn ?: return
+        try {
+            Shizuku.unbindUserService(lastArgs!!, conn, true)
+        } catch (e: Throwable) {
+            Log.w(TAG, "unbind failed", e)
+        }
+        _service.value = null
+        lastConn = null
     }
 
-    /** Overwrite file in place (keeps inode/owner). */
-    fun writeFile(path: String, bytes: ByteArray) {
-        val p = Shizuku.newProcess(arrayOf("sh", "-c", "cat > '$path'"), null, null)
-        val os = p.outputStream
-        os.write(bytes)
-        os.flush()
-        os.close()
-        val err = p.errorStream.readBytes().toString(Charsets.UTF_8)
-        val exit = try { p.waitFor() } catch (e: Throwable) { -1 }
-        if (exit != 0) error("写入失败: ${err.ifBlank { "exit $exit" }}")
+    // ---------------- save file ops (shell uid) ----------------
+
+    suspend fun listSaveSlots(context: Context): List<SaveSlot> = withContext(Dispatchers.IO) {
+        val s = ensureBound(context)
+        s.listSaveSlots().mapNotNull { line ->
+            val p = line.split("|")
+            if (p.size < 4) return@mapNotNull null
+            val slot = p[0].toIntOrNull() ?: return@mapNotNull null
+            SaveSlot(slot, p[3], p[1].toLongOrNull() ?: 0L, p[2].toLongOrNull() ?: 0L)
+        }.sortedWith(compareBy({ -it.mtimeSec }, { it.slot }))
     }
 
-    fun copyFile(from: String, to: String) {
-        val r = sh("cp -f '$from' '$to'")
-        if (r.exit != 0) error("备份失败: ${r.stderr.ifBlank { "exit ${r.exit}" }}")
+    suspend fun readFile(context: Context, path: String): ByteArray = withContext(Dispatchers.IO) {
+        ensureBound(context).readFile(path)
     }
 
-    fun shellWhoami(): String {
-        val r = sh("id")
-        return r.stdout.toString(Charsets.UTF_8).trim().ifBlank { "unknown" }
+    suspend fun writeFile(context: Context, path: String, bytes: ByteArray) {
+        withContext(Dispatchers.IO) { ensureBound(context).writeFile(path, bytes) }
+    }
+
+    suspend fun copyFile(context: Context, from: String, to: String) {
+        withContext(Dispatchers.IO) { ensureBound(context).copyFile(from, to) }
+    }
+
+    suspend fun gameRunning(context: Context): Boolean = withContext(Dispatchers.IO) {
+        runCatching { ensureBound(context).isRunning(GAME_PACKAGE) }.getOrDefault(false)
+    }
+
+    suspend fun whoAmI(context: Context): String = withContext(Dispatchers.IO) {
+        runCatching { ensureBound(context).id() }.getOrDefault("")
     }
 }

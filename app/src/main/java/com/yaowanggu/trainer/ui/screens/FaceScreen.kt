@@ -144,7 +144,7 @@ fun FaceScreen(vm: TrainerViewModel) {
         item {
             Divider(Modifier.padding(vertical = 8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { vm.writeBack() }, enabled = state.pending.isNotEmpty() && !state.loading) {
+                Button(onClick = { vm.writeBack(context) }, enabled = state.pending.isNotEmpty() && !state.loading) {
                     Text("写回存档（${state.pending.size} 项修改）")
                 }
                 OutlinedButton(onClick = { vm.discardPending() }, enabled = state.pending.isNotEmpty()) {

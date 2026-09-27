@@ -27,9 +27,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.yaowanggu.trainer.data.schema.CharSchema
 import com.yaowanggu.trainer.ui.TrainerViewModel
@@ -41,6 +42,7 @@ import com.yaowanggu.trainer.ui.TrainerViewModel
 @Composable
 fun AttrScreen(vm: TrainerViewModel) {
     val state by vm.state.collectAsState()
+    val context = LocalContext.current
     if (state.charRecord == null && state.rawCharOffset == null) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Text("未定位到角色属性记录。")
@@ -93,7 +95,7 @@ fun AttrScreen(vm: TrainerViewModel) {
         item {
             Divider(Modifier.padding(vertical = 8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { vm.writeBack() }, enabled = state.pending.isNotEmpty() && !state.loading) {
+                Button(onClick = { vm.writeBack(context) }, enabled = state.pending.isNotEmpty() && !state.loading) {
                     Text("写回存档（${state.pending.size} 项修改）")
                 }
                 OutlinedButton(onClick = { vm.discardPending() }, enabled = state.pending.isNotEmpty()) { Text("放弃") }

@@ -1,5 +1,6 @@
 package com.yaowanggu.trainer.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yaowanggu.trainer.data.RecordKind
@@ -48,13 +49,13 @@ class TrainerViewModel : ViewModel() {
         refreshShizuku()
     }
 
-    fun refreshShizuku() {
+    fun refreshShizuku(ctx: Context? = null) {
         val alive = ShizukuRepository.binderAlive()
         val perm = ShizukuRepository.permissionGranted()
         _state.value = _state.value.copy(binderAlive = alive, permissionOk = perm)
         viewModelScope.launch {
-            if (perm) {
-                val who = withContext(Dispatchers.IO) { runCatching { ShizukuRepository.shellWhoami() }.getOrDefault("") }
+            if (perm && ctx != null) {
+                val who = withContext(Dispatchers.IO) { runCatching { ShizukuRepository.whoAmI(ctx) }.getOrDefault("") }
                 _state.value = _state.value.copy(whoami = who)
             }
         }
@@ -71,12 +72,12 @@ class TrainerViewModel : ViewModel() {
 
     fun dismissMessage() { _state.value = _state.value.copy(message = null) }
 
-    fun loadSlots() {
+    fun loadSlots(ctx: Context) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, message = null)
             try {
                 val (slots, running) = withContext(Dispatchers.IO) {
-                    ShizukuRepository.listSaveSlots() to runCatching { ShizukuRepository.gameRunning() }.getOrDefault(false)
+                    ShizukuRepository.listSaveSlots(ctx) to runCatching { ShizukuRepository.gameRunning(ctx) }.getOrDefault(false)
                 }
                 _state.value = _state.value.copy(slots = slots, gameRunning = running, loading = false)
                 if (slots.isEmpty()) _state.value = _state.value.copy(message = "未找到存档文件（是否从未在真机上创建过存档？）")
@@ -86,17 +87,17 @@ class TrainerViewModel : ViewModel() {
         }
     }
 
-    fun openSlot(slot: ShizukuRepository.SaveSlot) {
+    fun openSlot(ctx: Context, slot: ShizukuRepository.SaveSlot) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, message = null)
             try {
                 val running = withContext(Dispatchers.IO) {
-                    runCatching { ShizukuRepository.gameRunning() }.getOrDefault(false)
+                    runCatching { ShizukuRepository.gameRunning(ctx) }.getOrDefault(false)
                 }
                 if (running) {
                     _state.value = _state.value.copy(gameRunning = true)
                 }
-                val bytes = withContext(Dispatchers.IO) { ShizukuRepository.readFile(slot.path) }
+                val bytes = withContext(Dispatchers.IO) { ShizukuRepository.readFile(ctx, slot.path) }
                 val st = SaveAnalyzer.analyze(bytes)
                 val face = st.bestFace
                 val char = st.bestChar
@@ -148,7 +149,7 @@ class TrainerViewModel : ViewModel() {
     fun discardPending() { _state.value = _state.value.copy(pending = emptyMap()) }
 
     /** Build edits and write back (with .bak backup first). */
-    fun writeBack() {
+    fun writeBack(ctx: Context) {
         val s = _state.value
         val st = s.structure ?: return
         val path = s.slotPath ?: return
@@ -194,14 +195,14 @@ class TrainerViewModel : ViewModel() {
                 }
                 val newBytes = withContext(Dispatchers.IO) {
                     val backup = "$path.bak"
-                    ShizukuRepository.copyFile(path, backup)
+                    ShizukuRepository.copyFile(ctx, path, backup)
                     val out = SaveEditor.apply(st, edits)
-                    ShizukuRepository.writeFile(path, out)
+                    ShizukuRepository.writeFile(ctx, path, out)
                     backup
                 }
                 _state.value = _state.value.copy(loading = false, backupPath = newBytes, pending = emptyMap(), message = "已写回（备份: $newBytes）。请重开游戏查看。")
                 // reload values
-                openSlot(s.slots.firstOrNull { it.path == path } ?: return@launch)
+                openSlot(ctx, s.slots.firstOrNull { it.path == path } ?: return@launch)
             } catch (e: Throwable) {
                 _state.value = _state.value.copy(loading = false, message = "写回失败: ${e.message}")
             }
