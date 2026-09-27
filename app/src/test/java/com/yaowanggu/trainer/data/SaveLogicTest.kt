@@ -127,7 +127,7 @@ class SaveLogicTest {
             )),
         )))
         val st = SaveAnalyzer.analyze(w.toByteArray())
-        assertEquals("messagepack", st.format)
+        assertEquals("msgpack", st.format)
         assertNotNull(st.bestFace)
         val vals = st.bestFace!!.values
         assertEquals(149L, vals[0])
@@ -153,6 +153,33 @@ class SaveLogicTest {
     }
 
     @Test
+    fun analyzerFindsFaceThroughLz4Block() {
+        val w = MpWriter()
+        w.write(MpValue.Map(linkedMapOf(
+            MpValue.Str("hero") to MpValue.Map(linkedMapOf(
+                MpValue.Str("face") to MpValue.Arr(faceValues().map { MpValue.Int(it) }),
+            )),
+        )))
+        val inner = w.toByteArray()
+        val wrapped = TestWrap.ext99(inner)
+        val st = SaveAnalyzer.analyze(wrapped)
+        assertEquals("msgpack+lz4block", st.format)
+        assertNotNull(st.bestFace)
+        assertEquals(149L, st.bestFace!!.values[0])
+        assertEquals(6L, st.bestFace!!.values[3]) // 眼睛
+        assertArrayEquals(inner, st.innerBytes)
+
+        // 树编辑写回输出 plain msgpack（游戏 TryDecompress 直接放行）
+        val edited = SaveEditor.apply(st, listOf(
+            SaveEditor.FieldEdit(SaveEditor.FieldRef.TreeField(st.bestFace!!.loc, 4), 9L),
+        ))
+        val st2 = SaveAnalyzer.analyze(edited)
+        assertEquals("msgpack", st2.format)
+        assertEquals(9L, st2.bestFace!!.values[3])
+        assertEquals(149L, st2.bestFace!!.values[0])
+    }
+
+    @Test
     fun analyzerFindsRecordsInRawBinary() {
         val face = faceValues()
         val chars = charValues()
@@ -162,7 +189,7 @@ class SaveLogicTest {
         buf.write(ByteArray(8))
         chars.forEach { buf.writeLe32(it.toInt()) }
         val st = SaveAnalyzer.analyze(buf.toByteArray())
-        assertEquals("raw-int32", st.format)
+        assertEquals("unknown+raw", st.format)
         assertNotNull(st.rawMatches)
         val faceMatch = st.rawMatches.first { it.kind == RecordKind.FACE }
         assertEquals(16, faceMatch.offset)

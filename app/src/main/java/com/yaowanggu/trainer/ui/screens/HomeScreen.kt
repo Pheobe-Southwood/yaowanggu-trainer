@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -99,7 +100,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                 Column(Modifier.padding(16.dp)) {
                     Text("③ 选择存档", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
-                    Text("默认排在最上面的是最近修改的存档（通常是玩家正在玩的进度）。", style = MaterialTheme.typography.bodySmall)
+                    Text("刷新后已自动打开最近修改的存档（即游戏在用的槽，带「推荐」徽标）；也可手动切换其它槽。", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -118,7 +119,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
             }
         }
 
-        items(state.slots) { slot ->
+        itemsIndexed(state.slots) { idx, slot ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = if (slot.path == state.slotPath) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer) else CardDefaults.cardColors(),
@@ -128,7 +129,16 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("槽位 ${slot.slot}", fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("槽位 ${slot.slot}", fontWeight = FontWeight.Bold)
+                            if (idx == 0) {
+                                Text(
+                                    "推荐 · 游戏在用",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                         Text("${slot.size} 字节 · 修改于 ${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(slot.mtimeSec * 1000))}",
                             style = MaterialTheme.typography.bodySmall)
                     }

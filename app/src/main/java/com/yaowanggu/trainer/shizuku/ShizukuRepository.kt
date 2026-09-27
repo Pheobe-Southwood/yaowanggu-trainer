@@ -6,6 +6,7 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+import com.yaowanggu.trainer.util.AppLog
 
 /**
  * Shizuku 统一入口：选后端 + 通用操作 + 诊断。
@@ -71,9 +72,11 @@ object ShizukuRepository {
             rp.exec("true")
             backend = rp
             lastError = null
+            AppLog.i("backend selected: remote-process")
             return rp
         } catch (e: Throwable) {
             Log.w(TAG, "remote process backend unavailable", e)
+            AppLog.e("remote-process unavailable: ${e.message}", e)
             lastError = e
         }
 
@@ -82,9 +85,11 @@ object ShizukuRepository {
             us.ensureBound()
             backend = us
             lastError = null
+            AppLog.i("backend selected: user-service")
             return us
         } catch (e: Throwable) {
             Log.w(TAG, "user service backend unavailable", e)
+            AppLog.e("user-service unavailable: ${e.message}", e)
             lastError = e
         }
 
@@ -156,12 +161,11 @@ object ShizukuRepository {
         return try {
             val b = backendFor(context)
             val out = b.exec(ShellBackend.listSavesCmd())
-            if (out.isBlank()) {
-                val dirs = b.exec(
-                    "ls -la /sdcard/Android/data/com.hydrozoa.yyg/files 2>&1 | head -20"
-                )
-                "（没有找到 nfile*.save）\n$dirs"
-            } else out
+            val listing = runCatching {
+                b.exec("ls -la /sdcard/Android/data/com.hydrozoa.yyg/files /sdcard/Android/data/com.hydrozoa.yyg /sdcard/Android/media/com.hydrozoa.yyg 2>&1 | head -60")
+            }.getOrDefault("(目录清单获取失败)")
+            val savesPart = if (out.isBlank()) "（没有找到 nfile*.save）" else out
+            "$savesPart\n--- 目录全量清单 ---\n$listing"
         } catch (e: Throwable) {
             "探测失败：${e::class.java.simpleName}: ${e.message}"
         }

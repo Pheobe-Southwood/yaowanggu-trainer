@@ -7,6 +7,7 @@ import moe.shizuku.server.IRemoteProcess
 import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
+import com.yaowanggu.trainer.util.AppLog
 
 /**
  * 远端进程后端：通过 Shizuku 的 BinderWrapper 调用服务端 newProcess，
@@ -46,7 +47,10 @@ class RemoteProcessBackend(override val name: String = "remote-process") : Shell
         val stderr = readAllText(proc.errorStream)
         val code = try { proc.waitFor() } catch (_: Throwable) { -1 }
         runCatching { proc.destroy() }
-        if (code != 0) throw IllegalStateException("命令失败 (exit=$code): ${stderr.trim()}")
+        if (code != 0) {
+            AppLog.w("exec failed exit=$code cmd=${cmd.take(160)} stderr=${stderr.take(200)}")
+            throw IllegalStateException("命令失败 (exit=$code): ${stderr.trim()}")
+        }
         stdout
     }
 

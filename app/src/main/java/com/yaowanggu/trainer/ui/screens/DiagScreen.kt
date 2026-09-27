@@ -3,11 +3,15 @@ package com.yaowanggu.trainer.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +35,7 @@ import com.yaowanggu.trainer.data.RecordKind
 import com.yaowanggu.trainer.data.RawMatch
 import com.yaowanggu.trainer.shizuku.ShellBackend
 import com.yaowanggu.trainer.shizuku.ShizukuRepository
+import com.yaowanggu.trainer.util.AppLog
 import com.yaowanggu.trainer.ui.TrainerViewModel
 import com.yaowanggu.trainer.data.msgpack.MpValue
 import kotlinx.coroutines.launch
@@ -47,9 +52,19 @@ fun DiagScreen(vm: TrainerViewModel) {
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val probe = remember { mutableStateOf("") }
+    val logTail = remember { mutableStateOf("") }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) vm.exportDiag(context, uri)
+    }
 
     fun refreshProbe() {
-        scope.launch { probe.value = ShizukuRepository.probeSaves(context) }
+        scope.launch {
+            probe.value = ShizukuRepository.probeSaves(context)
+            logTail.value = AppLog.snapshot().takeLast(60).joinToString("\n")
+        }
     }
 
     LazyColumn(
@@ -69,8 +84,11 @@ fun DiagScreen(vm: TrainerViewModel) {
                         appendLine("backend=${d.activeBackend}")
                         appendLine("disabled=${d.disabledReason}")
                         d.notes.forEach { appendLine("note: $it") }
+                        appendLine("openedSlot=${state.slotPath ?: "(none)"} container=${st?.format ?: "-"} innerSize=${st?.innerBytes?.size ?: 0}")
                         appendLine("--- 存档探测 ---")
                         append(probe.value)
+                        appendLine("--- 运行日志(最近60行) ---")
+                        append(AppLog.snapshot().takeLast(60).joinToString("\n"))
                     }
                     clipboard.setText(AnnotatedString(text))
                 },
@@ -94,15 +112,31 @@ fun DiagScreen(vm: TrainerViewModel) {
                     Text("存档诊断", style = MaterialTheme.typography.titleMedium)
                     Text("文件：${state.slotPath ?: "（未打开）"}", style = MaterialTheme.typography.bodySmall)
                     if (st != null) {
-                        Text("大小：${st.bytes.size} 字节 · 识别格式：${st.format}", style = MaterialTheme.typography.bodySmall)
-                        Text("头部 HEX：", style = MaterialTheme.typography.bodySmall)
+                        Text("大小：${st.bytes.size} 字节 · 容器：${st.format} · 解压后：${st.innerBytes.size} 字节", style = MaterialTheme.typography.bodySmall)
+                        Text("文件头 HEX：", style = MaterialTheme.typography.bodySmall)
                         Text(
                             st.bytes.take(48).joinToString(" ") { "%02X".format(it) },
                             fontFamily = FontFamily.Monospace,
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        if (st.format != "msgpack") {
+                            Text("解压后头部 HEX：", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                st.innerBytes.take(48).joinToString(" ") { "%02X".format(it) },
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     } else {
                         Text("尚未打开存档。", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val ts = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                            exportLauncher.launch("yaowanggu-diag-$ts.zip")
+                        }) { Text("导出诊断包(zip)") }
+                        OutlinedButton(onClick = { refreshProbe() }) { Text("刷新探测/日志") }
                     }
                 }
             }
@@ -148,6 +182,18 @@ fun DiagScreen(vm: TrainerViewModel) {
                                 "${if (r.kind == RecordKind.FACE) "外观" else "角色"} @0x%X · 匹配度 ${r.score}".format(r.offset),
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                        }
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("运行日志（最近 60 行）", style = MaterialTheme.typography.titleMedium)
+                        if (logTail.value.isBlank()) {
+                            Text("点「刷新探测/日志」查看。", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text(logTail.value, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

@@ -78,7 +78,7 @@ fun HelpScreen() {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("出现问题？", style = MaterialTheme.typography.titleMedium)
-                    Text("到「诊断」页截图，把格式识别、记录位置、结构预览发给开发者。")
+                    Text("到「诊断」页点「导出诊断包(zip)」：包含全部存档原始字节、解压后数据、诊断信息与运行日志；把 zip 发给开发者即可离线复现解析。也可点「复制诊断信息」快速反馈。")
                 }
             }
         }

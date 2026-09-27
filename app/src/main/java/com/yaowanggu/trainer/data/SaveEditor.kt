@@ -25,7 +25,7 @@ object SaveEditor {
             node?.asIntOrNull()
         }
         is FieldRef.RawField -> {
-            val b = structure.bytes
+            val b = structure.innerBytes
             val o = ref.offset
             if (o < 0 || o + 4 > b.size) null
             else (b[o].toLong() and 0xFF) or
@@ -47,8 +47,8 @@ object SaveEditor {
             }
             return MessagePack.serialize(t)
         }
-        // raw patch mode
-        val out = structure.bytes.copyOf()
+        // raw patch mode（基于解压后的 inner 字节；写回为 plain msgpack，官方兼容）
+        val out = structure.innerBytes.copyOf()
         edits.forEach { e ->
             val ref = e.ref
             if (ref is FieldRef.RawField) {

@@ -49,6 +49,8 @@ data class SaveStructure(
     val tree: MpValue?,
     val records: List<RecordMatch>,
     val rawMatches: List<RawMatch>,
+    /** 解压/去容器后的真正 msgpack 流；raw 模式偏移基于它。plain 时等于 [bytes]。 */
+    val innerBytes: ByteArray = bytes,
 ) {
     val bestFace: RecordMatch? get() = records.firstOrNull { it.kind == RecordKind.FACE }
     val bestChar: RecordMatch? get() = records.firstOrNull { it.kind == RecordKind.CHAR }
@@ -64,13 +66,14 @@ data class SaveStructure(
 object SaveAnalyzer {
 
     fun analyze(bytes: ByteArray): SaveStructure {
-        val tree = MessagePack.tryParse(bytes)
+        val dec = com.yaowanggu.trainer.data.codec.SaveCodec.decode(bytes)
+        val tree = dec.tree
         if (tree != null) {
             val records = findRecordsInTree(tree)
-            return SaveStructure(bytes, "messagepack", tree, records, emptyList())
+            return SaveStructure(bytes, dec.container, tree, records, emptyList(), dec.innerBytes)
         }
-        val raw = findRecordsInRaw(bytes)
-        return SaveStructure(bytes, "raw-int32", null, emptyList(), raw)
+        val raw = findRecordsInRaw(dec.innerBytes)
+        return SaveStructure(bytes, dec.container + "+raw", null, emptyList(), raw, dec.innerBytes)
     }
 
     // ---------- tree walking ----------
