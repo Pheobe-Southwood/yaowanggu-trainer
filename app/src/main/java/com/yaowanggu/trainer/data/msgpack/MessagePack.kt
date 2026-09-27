@@ -16,7 +16,7 @@ sealed class MpValue {
         override fun hashCode() = v.contentHashCode()
     }
     data class Arr(val items: List<MpValue>) : MpValue()
-    data class Map(val entries: Map<MpValue, MpValue>) : MpValue()
+    data class Map(val entries: kotlin.collections.Map<MpValue, MpValue>) : MpValue()
     data class Ext(val type: Byte, val data: ByteArray) : MpValue() {
         override fun equals(other: Any?) = other is Ext && type == other.type && data.contentEquals(other.data)
         override fun hashCode() = 31 * type.hashCode() + data.contentHashCode()
@@ -109,8 +109,8 @@ class MpReader(private val data: ByteArray, private var pos: Int = 0) {
         pos += n
         return v
     }
-    private fun readU8Length() = take(1)
-    private fun readU16Length() = take(2)
+    private fun readU8Length() = take(1).toInt()
+    private fun readU16Length() = take(2).toInt()
     private fun readU32Length(): Int {
         val v = take(4)
         if (v > data.size) throw MessagePackException("length too large")

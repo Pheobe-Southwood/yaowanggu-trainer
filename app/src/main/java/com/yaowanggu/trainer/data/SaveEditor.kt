@@ -38,14 +38,14 @@ object SaveEditor {
     /** Apply edits and return new file bytes. */
     fun apply(structure: SaveStructure, edits: List<FieldEdit>): ByteArray {
         if (structure.tree != null) {
-            var t = structure.tree
+            var t: MpValue = structure.tree
             edits.forEach { e ->
                 val ref = e.ref
                 if (ref is FieldRef.TreeField) {
                     t = replaceAt(t, ref.loc.fieldIndexPath(ref.fieldNo), MpValue.Int(e.newValue))
                 }
             }
-            return MessagePack.serialize(t!!)
+            return MessagePack.serialize(t)
         }
         // raw patch mode
         val out = structure.bytes.copyOf()
