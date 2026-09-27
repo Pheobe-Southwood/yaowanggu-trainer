@@ -1,0 +1,24 @@
+# Gradle / Android build
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+output.json
+
+# Reference material (large, see ref/README.md)
+ref/apk/
+apk/
+__pycache__/
+*.pyc
+
+# 大文件：参考 APK / 官方图表原图（已在 app assets 内置缩小版）
+ref/*.zip
+ref/apk/
+ref/GG修改器教程/

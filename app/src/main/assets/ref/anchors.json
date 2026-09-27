@@ -1,0 +1,20 @@
+{
+  "_comment": "字段集合 → 社区教程图表中的章节锚点。y 为 800 像素宽图内的像素坐标（ChartView 会滚动到这里）。来源：ref/GG修改器教程/*.jpg 的 OCR 定位。",
+  "face": [{ "chart": "male.jpg", "y": 253, "label": "脸型（男）" }],
+  "brow": [
+    { "chart": "male.jpg", "y": 1600, "label": "眉毛（男）" },
+    { "chart": "female.jpg", "y": 1700, "label": "眉毛（女）" }
+  ],
+  "eye": [{ "chart": "male.jpg", "y": 6000, "label": "眼睛（男）" }],
+  "mouth": [{ "chart": "male.jpg", "y": 10400, "label": "嘴巴（男）" }],
+  "nose": [],
+  "hair_front": [{ "chart": "female.jpg", "y": 18000, "label": "前发（女）" }],
+  "hair_back": [],
+  "trait": [{ "chart": "female.jpg", "y": 19800, "label": "性格" }],
+  "mole": [{ "chart": "female.jpg", "y": 20000, "label": "痣" }],
+  "hair_child_front": [],
+  "hair_child_back": [],
+  "hair_color": [{ "chart": "color.jpg", "y": 0, "label": "发色数值表" }],
+  "eye_color": [{ "chart": "color.jpg", "y": 0, "label": "瞳色数值表" }],
+  "ear": [{ "chart": "ear.jpg", "y": 0, "label": "兽耳代码 0–11" }]
+}
