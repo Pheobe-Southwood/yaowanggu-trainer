@@ -43,15 +43,11 @@ object SaveCodec {
     fun decode(bytes: ByteArray): DecodedSave {
         if (bytes.isEmpty()) return DecodedSave(bytes, "empty", null)
 
-        // 1) plain
-        MessagePack.tryParse(bytes)?.let {
-            AppLog.i("codec: container=msgpack")
-            return DecodedSave(bytes, "msgpack", it)
-        }
-
+        // 官方 TryDecompress 的顺序：先识别 ext99 / array98 压缩外壳，再按 plain 读。
+        // （Lz4BlockArray 外壳本身是合法 msgpack array，必须先于 plain 检查，否则会被误判为未压缩。）
         val root = runCatching { MpReader(bytes).readValue() }.getOrNull()
 
-        // 2) Lz4Block
+        // 1) Lz4Block
         if (root is MpValue.Ext && root.type == LZ4_BLOCK) {
             tryDecodeLz4Block(root)?.let {
                 AppLog.i("codec: container=msgpack+lz4block inner=${it.innerBytes.size}")
@@ -59,12 +55,18 @@ object SaveCodec {
             }
         }
 
-        // 3) Lz4BlockArray
+        // 2) Lz4BlockArray
         if (root is MpValue.Arr) {
             tryDecodeLz4BlockArray(root)?.let {
                 AppLog.i("codec: container=msgpack+lz4blockarray inner=${it.innerBytes.size}")
                 return it
             }
+        }
+
+        // 3) plain msgpack（完整消费 + 根为 Map/Arr）
+        MessagePack.tryParse(bytes)?.let {
+            AppLog.i("codec: container=msgpack")
+            return DecodedSave(bytes, "msgpack", it)
         }
 
         // 4) gzip / zlib
