@@ -1,46 +1,41 @@
 package com.yaowanggu.trainer.shizuku
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.os.IBinder
 import android.util.Log
-import com.yaowanggu.trainer.shell.IUserService
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
 
 /**
- * Shizuku 用户服务封装。
+ * Shizuku 统一入口：选后端 + 通用操作 + 诊断。
  *
- * Shizuku API 13 起 `Shizuku.newProcess` 已不公开，改用官方「用户服务」机制：
- * 把 [IUserService] 实现交给 Shizuku，由 Shizuku 以 shell(uid 2000) 身份实例化
- * 后交回 Binder；之后所有文件操作都在那个进程里执行，
- * 从而读写被 Android 11+ Scoped Storage 限制的 /sdcard/Android/data/... 目录。
+ * 后端优先级：remote-process（ShizukuBinderWrapper + newProcess，公开 API，
+ * adb/root 两种后端都可用）优先；user-service 兜底。
  */
 object ShizukuRepository {
 
     private const val TAG = "ShizukuRepository"
-    const val GAME_PACKAGE = "com.hydrozoa.yyg"
-    const val SERVICE_CLASS = "com.yaowanggu.trainer.shell.ShellUserService"
 
-    data class SaveSlot(val slot: Int, val path: String, val size: Long, val mtimeSec: Long)
+    data class Diagnostics(
+        val binderAlive: Boolean,
+        val permissionOk: Boolean,
+        val serverVersion: Int,
+        val serverUid: Int,
+        val selinuxContext: String,
+        val activeBackend: String,
+        val notes: List<String>,
+        val disabledReason: String,
+    )
 
-    private val _service = MutableStateFlow<IUserService?>(null)
-    val service: StateFlow<IUserService?> = _service.asStateFlow()
+    @Volatile
+    private var backend: ShellBackend? = null
 
-    private val lock = Any()
-    private var pending: CompletableDeferred<IUserService?>? = null
-    private var lastArgs: Shizuku.UserServiceArgs? = null
-    private var lastConn: ServiceConnection? = null
+    @Volatile
+    private var lastError: Throwable? = null
 
-    // ---------------- binder + permission ----------------
+    /** 当前生效后端名（user-service / remote-process / unknown） */
+    fun activeBackendName(): String = backend?.name ?: "unknown"
 
     fun binderAlive(): Boolean = try { Shizuku.pingBinder() } catch (e: Throwable) { false }
 
@@ -61,98 +56,114 @@ object ShizukuRepository {
         Shizuku.requestPermission(1001)
     }
 
-    // ---------------- binding the user service ----------------
-
-    /** 确保用户服务已绑定（幂等）。挂起直到拿到服务，失败抛异常。 */
-    suspend fun ensureBound(context: Context): IUserService {
-        _service.value?.let { return it }
-        val d = startBind(context)
-        withTimeoutOrNull(20_000) { d.await() }
-        _service.value?.let { return it }
-        throw IllegalStateException("绑定 Shizuku 用户服务失败：请确认 Shizuku 正在运行并已授权")
+    /** 重置后端（切后端/重试按钮用） */
+    fun resetBackend() {
+        backend = null
+        lastError = null
     }
 
-    private fun startBind(context: Context): CompletableDeferred<IUserService?> = synchronized(lock) {
-        _service.value?.let { s ->
-            return@synchronized CompletableDeferred<IUserService?>().apply { complete(s) }
-        }
-        pending?.let { return@synchronized it }
+    /** 取得后端：先远端进程，再用户服务兜底。 */
+    suspend fun backendFor(context: Context): ShellBackend {
+        backend?.let { return it }
 
-        val d = CompletableDeferred<IUserService?>()
-        pending = d
-        val app = context.applicationContext
-        val args = Shizuku.UserServiceArgs(
-            ComponentName(app.packageName, SERVICE_CLASS)
-        ).daemon(false).version(1)
-        val conn = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-                Log.i(TAG, "user service connected")
-                val s = IUserService.Stub.asInterface(binder)
-                _service.value = s
-                synchronized(lock) { pending = null }
-                d.complete(s)
-            }
-            override fun onServiceDisconnected(name: ComponentName) {
-                Log.w(TAG, "user service disconnected")
-                _service.value = null
-                synchronized(lock) { pending = null; lastConn = null }
-                if (!d.isCompleted) d.complete(null)
-            }
-        }
-        lastArgs = args
-        lastConn = conn
-        val result = try {
-            Shizuku.bindUserService(args, conn)
-            d
-        } catch (e: Throwable) {
-            Log.e(TAG, "bindUserService failed", e)
-            synchronized(lock) { pending = null }
-            d.complete(null)
-            d
-        }
-        return@synchronized result
-    }
-
-    fun unbind(context: Context) {
-        val conn = lastConn ?: return
         try {
-            Shizuku.unbindUserService(lastArgs!!, conn, true)
+            val rp = RemoteProcessBackend()
+            rp.exec("true")
+            backend = rp
+            lastError = null
+            return rp
         } catch (e: Throwable) {
-            Log.w(TAG, "unbind failed", e)
+            Log.w(TAG, "remote process backend unavailable", e)
+            lastError = e
         }
-        _service.value = null
-        lastConn = null
+
+        try {
+            val us = UserServiceBackend(context)
+            us.ensureBound()
+            backend = us
+            lastError = null
+            return us
+        } catch (e: Throwable) {
+            Log.w(TAG, "user service backend unavailable", e)
+            lastError = e
+        }
+
+        throw IllegalStateException("两条通道都不可用（remote-process: ${describe(lastError)}）")
     }
 
-    // ---------------- save file ops (shell uid) ----------------
+    private fun describe(t: Throwable?): String =
+        t?.let { "${it::class.java.simpleName}: ${it.message}" } ?: "未记录"
 
-    suspend fun listSaveSlots(context: Context): List<SaveSlot> = withContext(Dispatchers.IO) {
-        val s = ensureBound(context)
-        s.listSaveSlots().mapNotNull { line ->
-            val p = line.split("|")
-            if (p.size < 4) return@mapNotNull null
-            val slot = p[0].toIntOrNull() ?: return@mapNotNull null
-            SaveSlot(slot, p[3], p[1].toLongOrNull() ?: 0L, p[2].toLongOrNull() ?: 0L)
-        }.sortedWith(compareBy({ -it.mtimeSec }, { it.slot }))
+    // ---------------- 操作 ----------------
+
+    suspend fun listSaveSlots(context: Context): List<ShellBackend.Slot> =
+        backendFor(context).listSaveSlots()
+
+    suspend fun readFile(context: Context, path: String): ByteArray =
+        backendFor(context).readFile(path)
+
+    suspend fun writeFile(context: Context, path: String, bytes: ByteArray) =
+        backendFor(context).writeFile(path, bytes)
+
+    suspend fun copyFile(context: Context, from: String, to: String) =
+        backendFor(context).copyFile(from, to)
+
+    suspend fun gameRunning(context: Context): Boolean =
+        runCatching { backendFor(context).isRunning(ShellBackend.GAME_PACKAGE) }.getOrDefault(false)
+
+    suspend fun whoAmI(context: Context): String =
+        runCatching { backendFor(context).id() }.getOrDefault("")
+
+    // ---------------- 诊断 ----------------
+
+    fun diagnose(context: Context): Diagnostics {
+        val notes = mutableListOf<String>()
+        val alive = binderAlive()
+        val perm = permissionGranted()
+        val ver = if (alive) try { Shizuku.getVersion() } catch (e: Throwable) { -1 } else -1
+        val uid = if (alive) try { Shizuku.getUid() } catch (e: Throwable) { -1 } else -1
+        val ctx = if (alive) {
+            try { Shizuku.getSELinuxContext() ?: "" } catch (e: Throwable) { "获取失败: ${e.message}" }
+        } else ""
+
+        if (!alive) notes += "Shizuku binder 未就绪：请先打开 Shizuku 并完成配对"
+        else if (!perm) notes += "权限未授予：点「授权 Shizuku」"
+        if (alive && ver in 0..10) notes += "服务端版本 $ver < 11，新特性不受支持"
+        when (uid) {
+            0 -> notes += "当前是 root(uid 0) 后端（Sui/Magisk 或 su 启动）"
+            2000 -> notes += "当前是 adb shell(uid 2000) 后端"
+            -1 -> if (alive) notes += "取不到服务端 uid（服务端实现可能不完整，如旧版 Sui）"
+        }
+        if (ctx.isNotBlank() && ctx.count { it == ':' } < 3) notes += "SELinux 上下文异常：$ctx"
+
+        val disabled = describe(lastError)
+        if (lastError != null) notes += "已禁用通道的错误：$disabled"
+
+        return Diagnostics(
+            binderAlive = alive,
+            permissionOk = perm,
+            serverVersion = ver,
+            serverUid = uid,
+            selinuxContext = ctx,
+            activeBackend = activeBackendName(),
+            notes = notes,
+            disabledReason = disabled,
+        )
     }
 
-    suspend fun readFile(context: Context, path: String): ByteArray = withContext(Dispatchers.IO) {
-        ensureBound(context).readFile(path)
-    }
-
-    suspend fun writeFile(context: Context, path: String, bytes: ByteArray) {
-        withContext(Dispatchers.IO) { ensureBound(context).writeFile(path, bytes) }
-    }
-
-    suspend fun copyFile(context: Context, from: String, to: String) {
-        withContext(Dispatchers.IO) { ensureBound(context).copyFile(from, to) }
-    }
-
-    suspend fun gameRunning(context: Context): Boolean = withContext(Dispatchers.IO) {
-        runCatching { ensureBound(context).isRunning(GAME_PACKAGE) }.getOrDefault(false)
-    }
-
-    suspend fun whoAmI(context: Context): String = withContext(Dispatchers.IO) {
-        runCatching { ensureBound(context).id() }.getOrDefault("")
+    /** 诊断页用：把当前存档探测命令跑一遍看看有没有文件 */
+    suspend fun probeSaves(context: Context): String {
+        return try {
+            val b = backendFor(context)
+            val out = b.exec(ShellBackend.listSavesCmd())
+            if (out.isBlank()) {
+                val dirs = b.exec(
+                    "ls -la /sdcard/Android/data/com.hydrozoa.yyg/files 2>&1 | head -20"
+                )
+                "（没有找到 nfile*.save）\n$dirs"
+            } else out
+        } catch (e: Throwable) {
+            "探测失败：${e::class.java.simpleName}: ${e.message}"
+        }
     }
 }

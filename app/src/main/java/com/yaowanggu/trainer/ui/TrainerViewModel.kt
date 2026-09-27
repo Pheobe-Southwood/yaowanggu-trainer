@@ -8,6 +8,7 @@ import com.yaowanggu.trainer.data.RecordMatch
 import com.yaowanggu.trainer.data.SaveAnalyzer
 import com.yaowanggu.trainer.data.SaveEditor
 import com.yaowanggu.trainer.data.SaveStructure
+import com.yaowanggu.trainer.shizuku.ShellBackend
 import com.yaowanggu.trainer.shizuku.ShizukuRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,8 +21,9 @@ data class UiState(
     val binderAlive: Boolean = false,
     val permissionOk: Boolean = false,
     val whoami: String = "",
+    val backendName: String = "unknown",
     val gameRunning: Boolean? = null,
-    val slots: List<ShizukuRepository.SaveSlot> = emptyList(),
+    val slots: List<ShellBackend.Slot> = emptyList(),
     val loading: Boolean = false,
     val message: String? = null,
     val slotPath: String? = null,
@@ -56,7 +58,7 @@ class TrainerViewModel : ViewModel() {
         viewModelScope.launch {
             if (perm && ctx != null) {
                 val who = withContext(Dispatchers.IO) { runCatching { ShizukuRepository.whoAmI(ctx) }.getOrDefault("") }
-                _state.value = _state.value.copy(whoami = who)
+                _state.value = _state.value.copy(whoami = who, backendName = ShizukuRepository.activeBackendName())
             }
         }
     }
@@ -80,14 +82,24 @@ class TrainerViewModel : ViewModel() {
                     ShizukuRepository.listSaveSlots(ctx) to runCatching { ShizukuRepository.gameRunning(ctx) }.getOrDefault(false)
                 }
                 _state.value = _state.value.copy(slots = slots, gameRunning = running, loading = false)
-                if (slots.isEmpty()) _state.value = _state.value.copy(message = "未找到存档文件（是否从未在真机上创建过存档？）")
+                if (slots.isEmpty()) _state.value = _state.value.copy(message = "未找到存档文件。请在真机上进入游戏并保存一次后再试；已扫描 /sdcard/Android/data/com.hydrozoa.yyg 与 /sdcard/Android/media/com.hydrozoa.yyg。")
             } catch (e: Throwable) {
-                _state.value = _state.value.copy(loading = false, message = "读取存档列表失败: ${e.message}")
+                val d = ShizukuRepository.diagnose(ctx)
+                _state.value = _state.value.copy(
+                    loading = false,
+                    backendName = d.activeBackend,
+                    message = buildString {
+                        append("读取存档列表失败: ${e::class.java.simpleName}: ${e.message}\n")
+                        if (d.activeBackend == "unknown") append("（两条通道都试过了，详见诊断页）\n")
+                        append("诊断：version=${d.serverVersion} uid=${d.serverUid} binder=${d.binderAlive} perm=${d.permissionOk}\n")
+                        append(d.notes.take(3).joinToString("\n"))
+                    },
+                )
             }
         }
     }
 
-    fun openSlot(ctx: Context, slot: ShizukuRepository.SaveSlot) {
+    fun openSlot(ctx: Context, slot: ShellBackend.Slot) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, message = null)
             try {

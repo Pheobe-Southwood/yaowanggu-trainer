@@ -51,6 +51,10 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                             else -> "Shizuku 已就绪${if (state.whoami.isNotBlank()) "（${state.whoami}）" else ""}"
                         }
                     )
+                    if (state.backendName != "unknown") {
+                        Spacer(Modifier.height(4.dp))
+                        Text("当前通道：${state.backendName}", style = MaterialTheme.typography.bodySmall)
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { vm.refreshShizuku(context) }) { Text("刷新状态") }
@@ -107,7 +111,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                 ) {
                     Text(
-                        "未发现存档文件。确认：1) 真机上玩过该游戏并有过手动/自动存档；2) 目录 /sdcard/Android/data/com.hydrozoa.yyg/files 可访问。",
+                        "未发现存档文件。\n确认：1) 真机上玩过该游戏并保存过；2) 先在「存档」页点刷新状态建立 Shizuku 通道。\n仍不行请到「诊断」页点「探测存档目录」并复制诊断信息反馈。",
                         Modifier.padding(16.dp),
                     )
                 }
