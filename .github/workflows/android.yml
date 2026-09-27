@@ -19,13 +19,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
+
+      # ubuntu-latest 自带 Android SDK（ANDROID_HOME）；这里只把许可同意掉，
+      # 平台/构建工具由 AGP 自行补齐。
+      - name: Accept Android SDK licenses
+        run: |
+          yes | "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
 
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
