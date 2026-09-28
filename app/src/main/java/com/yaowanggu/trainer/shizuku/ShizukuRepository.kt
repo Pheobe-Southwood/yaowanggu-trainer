@@ -137,7 +137,7 @@ object ShizukuRepository {
     suspend fun cleanStrayFiles(context: Context, dir: String): String {
         val out = backendFor(context).exec(
             "mkdir -p '$BACKUP_DIR'; cd '$dir' && for f in *.dsh-tmp nfile*.save.bak; do " +
-                "[ -e "\$f" ] && mv -f "\$f" '$BACKUP_DIR/'; done; echo CLEAN_OK",
+                "[ -e \"\$f\" ] && mv -f \"\$f\" '$BACKUP_DIR/'; done; echo CLEAN_OK",
         )
         AppLog.i("cleanStrayFiles: dir=$dir out=$out")
         return out
