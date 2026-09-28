@@ -142,12 +142,69 @@ fun DiagScreen(vm: TrainerViewModel) {
             }
         }
 
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("模块扫描表", style = MaterialTheme.typography.titleMedium)
+                    if (state.moduleInfo.isEmpty()) {
+                        Text("先在「存档」页点「刷新存档列表」。", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        state.slots.forEach { sl ->
+                            val mi = state.moduleInfo[sl.path]
+                            Text(
+                                "nfile%-2d %8dB  %-22s 角色×%d".format(sl.slot, sl.size, mi?.container ?: "-", mi?.personCount ?: 0),
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (st != null && st.persons.isNotEmpty()) {
+            val p = st.persons.getOrNull(state.selectedPerson) ?: st.persons[0]
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("选中角色：ID ${p.charId}（记录 #${p.recordIndex}，长度 ${p.recordLen}）", style = MaterialTheme.typography.titleMedium)
+                        Text("五官窗口 @${p.loc.startIndex}：${p.faceValues}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                        Text("提示值（疑似灵气/武力）：${p.hints}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("角色记录前缀查看器（用于字段定位）", style = MaterialTheme.typography.titleMedium)
+                        Text("把此内容与游戏内数值（寿元/灵气/武力等）对照，告诉我哪个索引是什么字段。", style = MaterialTheme.typography.bodySmall)
+                        val rootArr = st.tree as? MpValue.Arr
+                        val rec = rootArr?.items?.getOrNull(p.recordIndex) as? MpValue.Arr
+                        if (rec != null) {
+                            val ints = rec.items.map { it.asIntOrNull() }
+                            val faceStart = p.loc.startIndex
+                            ints.chunked(8).forEachIndexed { ci, chunk ->
+                                Text(
+                                    chunk.mapIndexed { j, v -> "[${ci * 8 + j}]${if (ci * 8 + j == faceStart) "→脸" else ""}=${v ?: "·"}" }
+                                        .joinToString(" "),
+                                    fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        } else {
+                            Text("（无法读取记录）", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+
         if (st != null) {
             val recs = st.records
             item {
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                     Column(Modifier.padding(16.dp)) {
-                        Text("识别到的记录（${recs.size}）", style = MaterialTheme.typography.titleMedium)
+                        Text("通用记录扫描（${recs.size}）", style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }

@@ -4,9 +4,11 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yaowanggu.trainer.data.PersonFinder
 import com.yaowanggu.trainer.data.RecordKind
 import com.yaowanggu.trainer.data.RecordMatch
 import com.yaowanggu.trainer.data.SaveAnalyzer
+import com.yaowanggu.trainer.data.codec.SaveCodec
 import com.yaowanggu.trainer.data.export.DiagExporter
 import com.yaowanggu.trainer.data.SaveEditor
 import com.yaowanggu.trainer.data.SaveStructure
@@ -40,10 +42,21 @@ data class UiState(
     val backupPath: String? = null,
     val rawFaceOffset: Int? = null,
     val rawCharOffset: Int? = null,
+    /** path → 模块扫描信息（容器、角色数） */
+    val moduleInfo: Map<String, ModuleInfo> = emptyMap(),
+    /** 当前选中角色在 structure.persons 中的下标 */
+    val selectedPerson: Int = 0,
 ) {
     val faceReady: Boolean get() = faceRecord != null || rawFaceOffset != null
     val isTree: Boolean get() = structure?.tree != null
+    val persons: List<PersonFinder.PersonRecord> get() = structure?.persons ?: emptyList()
+    val currentPerson: PersonFinder.PersonRecord? get() = persons.getOrNull(selectedPerson)
 }
+
+data class ModuleInfo(
+    val container: String,
+    val personCount: Int,
+)
 
 class TrainerViewModel : ViewModel() {
 
@@ -81,16 +94,24 @@ class TrainerViewModel : ViewModel() {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, message = null)
             try {
-                val (slots, running) = withContext(Dispatchers.IO) {
+                val (slots0, running) = withContext(Dispatchers.IO) {
                     ShizukuRepository.listSaveSlots(ctx) to runCatching { ShizukuRepository.gameRunning(ctx) }.getOrDefault(false)
                 }
-                _state.value = _state.value.copy(slots = slots, gameRunning = running, loading = false)
+                // 模块模型：nfileN 是同一存档的数据模块，mtime 全部相同（批量写），按编号排序
+                val slots = slots0.sortedBy { it.slot }
+                // 全模块扫描：解码 + 角色定位，找出外观模块
+                val infos = withContext(Dispatchers.IO) { scanModules(ctx, slots) }
+                _state.value = _state.value.copy(slots = slots, gameRunning = running, moduleInfo = infos, loading = false)
                 if (slots.isEmpty()) {
                     _state.value = _state.value.copy(message = "未找到存档文件。请在真机上进入游戏并保存一次后再试；已扫描 /sdcard/Android/data/com.hydrozoa.yyg 与 /sdcard/Android/media/com.hydrozoa.yyg。")
                 } else if (_state.value.slotPath == null) {
-                    // 自动打开 mtime 最新的槽（游戏在用的存档）
-                    AppLog.i("auto-open recommended slot ${slots[0].slot} (${slots[0].path})")
-                    openSlot(ctx, slots[0])
+                    val faceSlot = slots.firstOrNull { (infos[it.path]?.personCount ?: 0) > 0 }
+                        ?: slots.filter { infos[it.path]?.container?.startsWith("msgpack") == true || infos[it.path]?.container?.contains("msgpack") == true }
+                            .maxByOrNull { it.size }
+                    if (faceSlot != null) {
+                        AppLog.i("auto-open module slot=${faceSlot.slot} persons=${infos[faceSlot.path]?.personCount} (${faceSlot.path})")
+                        openSlot(ctx, faceSlot)
+                    }
                 }
             } catch (e: Throwable) {
                 val d = ShizukuRepository.diagnose(ctx)
@@ -107,6 +128,30 @@ class TrainerViewModel : ViewModel() {
             }
         }
     }
+
+    /** 逐模块 decode + PersonFinder（不做全量记录扫描，速度优先）。 */
+    private suspend fun scanModules(ctx: Context, slots: List<ShellBackend.Slot>): Map<String, ModuleInfo> =
+        withContext(Dispatchers.IO) {
+            val out = LinkedHashMap<String, ModuleInfo>()
+            slots.forEach { slot ->
+                if (slot.size > 8L * 1024 * 1024) {
+                    out[slot.path] = ModuleInfo("too-large", 0)
+                    return@forEach
+                }
+                val info = runCatching {
+                    val bytes = ShizukuRepository.readFile(ctx, slot.path)
+                    val dec = SaveCodec.decode(bytes)
+                    val persons = PersonFinder.findPersons(dec.tree)
+                    ModuleInfo(dec.container, persons.size)
+                }.getOrElse { e ->
+                    AppLog.w("scanModules: slot ${slot.slot} failed: ${e.message}")
+                    ModuleInfo("error", 0)
+                }
+                out[slot.path] = info
+                AppLog.i("scanModules: slot=${slot.slot} size=${slot.size} container=${info.container} persons=${info.personCount}")
+            }
+            out
+        }
 
     fun openSlot(ctx: Context, slot: ShellBackend.Slot) {
         viewModelScope.launch {
@@ -125,11 +170,12 @@ class TrainerViewModel : ViewModel() {
                 val rawFace = st.rawMatches.firstOrNull { it.kind == RecordKind.FACE }?.offset
                 val rawChar = st.rawMatches.firstOrNull { it.kind == RecordKind.CHAR }?.offset
                 val baseMsg = when {
+                    st.persons.isNotEmpty() -> "已识别外观模块（${st.format}）· ${st.persons.size} 个角色，默认选中 ID ${st.persons[0].charId}（通常是玩家主角），可在「五官」页切换"
                     face != null -> "已识别外观记录（${st.format}）"
                     rawFace != null -> "未识别结构化外观，已定位到疑似二进制偏移"
-                    else -> "未能自动定位外观数据，请到“诊断”页查看结构"
+                    else -> "此模块未检测到外观数据（${st.format}），可在列表中选择其它模块"
                 }
-                AppLog.i("openSlot ${slot.slot}: container=${st.format} inner=${st.innerBytes.size} face=${face != null} rawFace=${rawFace != null} records=${st.records.size}")
+                AppLog.i("openSlot ${slot.slot}: container=${st.format} inner=${st.innerBytes.size} persons=${st.persons.size} face=${face != null} rawFace=${rawFace != null} records=${st.records.size}")
                 val msg = if (running) "⚠️ 游戏正在运行，修改会被覆盖！\n$baseMsg" else baseMsg
                 _state.value = _state.value.copy(
                     loading = false,
@@ -143,6 +189,7 @@ class TrainerViewModel : ViewModel() {
                     charValues = char?.values ?: emptyList(),
                     rawFaceOffset = rawFace,
                     rawCharOffset = rawChar,
+                    selectedPerson = 0,
                     pending = emptyMap(),
                     backupPath = null,
                 )
@@ -153,9 +200,31 @@ class TrainerViewModel : ViewModel() {
         }
     }
 
+    /** 切换选中角色（persons 下标）。 */
+    fun selectPerson(index: Int) {
+        val s = _state.value
+        val p = s.persons.getOrNull(index) ?: return
+        val face = RecordMatch(RecordKind.FACE, p.loc, 24, p.faceValues)
+        AppLog.i("selectPerson: index=$index charId=${p.charId} recordIndex=${p.recordIndex}")
+        _state.value = s.copy(selectedPerson = index, faceRecord = face, faceValues = p.faceValues)
+    }
+
+    /** 按角色 ID 跳转选择。 */
+    fun selectPersonByCharId(charId: Long) {
+        val idx = _state.value.persons.indexOfFirst { it.charId == charId }
+        if (idx >= 0) selectPerson(idx)
+        else _state.value = _state.value.copy(message = "未找到角色 ID $charId")
+    }
+
+    /** 当前选中角色的 pending 键前缀。 */
+    private fun faceKeyPrefix(): String {
+        val p = _state.value.currentPerson
+        return if (p != null) "face:${p.recordIndex}:" else "face:gen:"
+    }
+
     /** Stage an edit (not yet written). */
     fun stageFaceEdit(fieldNo: Int, value: Long) {
-        val k = "face:$fieldNo"
+        val k = faceKeyPrefix() + fieldNo
         _state.value = _state.value.copy(pending = _state.value.pending + (k to value))
     }
 
@@ -187,13 +256,18 @@ class TrainerViewModel : ViewModel() {
                 s.pending.forEach { (k, v) ->
                     when {
                         k.startsWith("face:") -> {
-                            val no = k.removePrefix("face:").toInt()
-                            val faceMatch = s.faceRecord
-                            if (faceMatch != null) {
-                                edits.add(SaveEditor.FieldEdit(SaveEditor.FieldRef.TreeField(faceMatch.loc, no), v))
-                            } else {
-                                val off = s.rawFaceOffset
-                                if (off != null) edits.add(SaveEditor.FieldEdit(SaveEditor.FieldRef.RawField(off + (no - 1) * 4), v))
+                            val rest = k.removePrefix("face:")
+                            val sep = rest.indexOf(':')
+                            val who = if (sep >= 0) rest.substring(0, sep) else "gen"
+                            val no = (if (sep >= 0) rest.substring(sep + 1) else rest).toInt()
+                            val person = if (who != "gen") who.toIntOrNull()?.let { ri -> s.persons.firstOrNull { it.recordIndex == ri } } else null
+                            when {
+                                person != null -> edits.add(SaveEditor.FieldEdit(SaveEditor.FieldRef.TreeField(person.loc, no), v))
+                                who == "gen" && s.faceRecord != null -> edits.add(SaveEditor.FieldEdit(SaveEditor.FieldRef.TreeField(s.faceRecord.loc, no), v))
+                                else -> {
+                                    val off = s.rawFaceOffset
+                                    if (off != null) edits.add(SaveEditor.FieldEdit(SaveEditor.FieldRef.RawField(off + (no - 1) * 4), v))
+                                }
                             }
                         }
                         k.startsWith("char:") -> {
@@ -216,17 +290,36 @@ class TrainerViewModel : ViewModel() {
                     _state.value = _state.value.copy(loading = false, message = "没有待写入的修改")
                     return@launch
                 }
-                val (newBytes, outSize) = withContext(Dispatchers.IO) {
-                    val backup = "$path.bak"
-                    ShizukuRepository.copyFile(ctx, path, backup)
-                    val out = SaveEditor.apply(st, edits)
+                val prevCharId = s.currentPerson?.charId
+                val res = withContext(Dispatchers.IO) {
+                    val bak = "$path.bak"
+                    ShizukuRepository.copyFile(ctx, path, bak)
+                    val newInner = SaveEditor.apply(st, edits)
+                    // 按原容器重新打包（zlib 模块必须重新压缩，否则游戏解压失败回退 _backup）
+                    val out = SaveCodec.encode(st.format, newInner, st.bytes)
                     ShizukuRepository.writeFile(ctx, path, out)
-                    backup to out.size
+                    // 回读验证
+                    val check = ShizukuRepository.readFile(ctx, path)
+                    val stReload = SaveAnalyzer.analyze(check)
+                    val idx = if (prevCharId != null) {
+                        stReload.persons.indexOfFirst { it.charId == prevCharId }.let { if (it >= 0) it else 0 }
+                    } else 0
+                    WriteBackResult(bak, out.size, stReload, idx)
                 }
-                AppLog.i("writeBack ok: $path backup=$newBytes bytes=$outSize edits=${edits.size}")
-                _state.value = _state.value.copy(loading = false, backupPath = newBytes, pending = emptyMap(), message = "已写回（备份: $newBytes）。请重开游戏查看。")
-                // reload values
-                openSlot(ctx, s.slots.firstOrNull { it.path == path } ?: return@launch)
+                val bak2 = res.backup; val size2 = res.outSize; val stR = res.structure; val sel = res.selIdx
+                AppLog.i("writeBack ok: $path backup=$bak2 bytes=$size2 edits=${edits.size} container=${stR.format} persons=${stR.persons.size}")
+                val p2 = stR.persons.getOrNull(sel)
+                val face2 = p2?.let { RecordMatch(RecordKind.FACE, it.loc, 24, it.faceValues) } ?: stR.bestFace
+                _state.value = _state.value.copy(
+                    loading = false,
+                    backupPath = bak2,
+                    pending = emptyMap(),
+                    structure = stR,
+                    faceRecord = face2,
+                    faceValues = p2?.faceValues ?: face2?.values ?: emptyList(),
+                    selectedPerson = sel,
+                    message = "已写回（${stR.format}，备份: $bak2，回读验证 ${stR.persons.size} 个角色）。请重开游戏查看。",
+                )
             } catch (e: Throwable) {
                 AppLog.e("writeBack failed: ${e.message}", e)
                 _state.value = _state.value.copy(loading = false, message = "写回失败: ${e.message}")
@@ -236,7 +329,9 @@ class TrainerViewModel : ViewModel() {
 
     fun currentFaceValue(fieldNo: Int): Long? {
         val s = _state.value
-        val staged = s.pending["face:$fieldNo"] ?: s.pending["rawface:$fieldNo"]
+        val staged = s.pending[faceKeyPrefix() + fieldNo]
+            ?: s.pending["face:gen:$fieldNo"]
+            ?: s.pending["rawface:$fieldNo"]
         if (staged != null) return staged
         return when {
             s.faceRecord != null && s.faceRecord.values.size >= fieldNo -> s.faceRecord.values[fieldNo - 1]
@@ -288,8 +383,15 @@ class TrainerViewModel : ViewModel() {
             appendLine("disabled=${d.disabledReason}")
             d.notes.forEach { appendLine("note: $it") }
             appendLine("openedSlot=${s.slotPath ?: "(none)"} container=${s.structure?.format ?: "-"} innerSize=${s.structure?.innerBytes?.size ?: 0}")
-            appendLine("--- 槽位列表 ---")
-            s.slots.forEach { appendLine("slot=${it.slot} size=${it.size} mtime=${it.mtimeSec} path=${it.path}") }
+            s.currentPerson?.let {
+                appendLine("selectedPerson: charId=${it.charId} recordIndex=${it.recordIndex} faceStart=${it.loc.startIndex} recordLen=${it.recordLen}")
+                appendLine("faceValues=${it.faceValues}")
+            }
+            appendLine("--- 模块列表 ---")
+            s.slots.forEach {
+                val mi = s.moduleInfo[it.path]
+                appendLine("slot=${it.slot} size=${it.size} container=${mi?.container ?: "-"} persons=${mi?.personCount ?: 0} path=${it.path}")
+            }
             appendLine("--- 存档探测/目录清单 ---")
             appendLine(probe)
         }
@@ -331,3 +433,10 @@ class TrainerViewModel : ViewModel() {
         }
     }
 }
+
+private data class WriteBackResult(
+    val backup: String,
+    val outSize: Int,
+    val structure: SaveStructure,
+    val selIdx: Int,
+)

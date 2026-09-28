@@ -98,9 +98,9 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("③ 选择存档", style = MaterialTheme.typography.titleMedium)
+                    Text("③ 数据模块（同一存档的组成部分）", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
-                    Text("刷新后已自动打开最近修改的存档（即游戏在用的槽，带「推荐」徽标）；也可手动切换其它槽。", style = MaterialTheme.typography.bodySmall)
+                    Text("游戏把一份存档拆成 nfile0..31 多个数据模块批量读写（mtime 全部相同）。刷新后已自动扫描并打开「外观模块」（含角色五官数据，带徽标）；也可手动查看其它模块。", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -129,18 +129,22 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
+                        val mi = state.moduleInfo[slot.path]
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("槽位 ${slot.slot}", fontWeight = FontWeight.Bold)
-                            if (idx == 0) {
+                            Text("模块 nfile${slot.slot}", fontWeight = FontWeight.Bold)
+                            if ((mi?.personCount ?: 0) > 0) {
                                 Text(
-                                    "推荐 · 游戏在用",
+                                    "外观模块 · ${mi?.personCount} 个角色",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
-                        Text("${slot.size} 字节 · 修改于 ${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(slot.mtimeSec * 1000))}",
-                            style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "${slot.size} 字节 · 容器 ${mi?.container ?: "（未扫描）"}" +
+                                (if ((mi?.personCount ?: 0) == 0 && mi != null && mi.container == "unknown") " · 加密/未知" else ""),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                     OutlinedButton(onClick = { vm.openSlot(context, slot) }, enabled = state.permissionOk) { Text("打开") }
                     if (state.faceReady && slot.path == state.slotPath) {
@@ -160,7 +164,7 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
                         Divider(Modifier.padding(vertical = 8.dp))
                         Text(
                             if (state.faceReady) "已定位外观数据，可进入「五官」页修改。"
-                            else "未能定位外观数据，请到「诊断」页查看结构并发给我。",
+                            else "未能定位外观数据，请到「诊断」页导出诊断包发给我。",
                         )
                     }
                 }

@@ -105,6 +105,124 @@ object SaveCodec {
         return DecodedSave(bytes, "unknown", null)
     }
 
+    /**
+     * 按原容器把 newInner 重新打包成可写回的文件字节。
+     * 游戏对 nfile30 等模块使用 zlib 外层：直接写 plain msgpack 会导致游戏解压失败并回退 _backup。
+     * 写回前必须通过 [verify] 自检，失败抛 IllegalStateException（调用方中止写入）。
+     */
+    fun encode(container: String, newInner: ByteArray, originalBytes: ByteArray? = null): ByteArray {
+        val encoded = when {
+            container == "msgpack" || container.isEmpty() -> newInner
+            container == "zlib+msgpack" -> zlibCompress(newInner)
+            container == "gzip+msgpack" -> gzipCompress(newInner)
+            container == "msgpack+lz4block" -> lz4BlockFrame(newInner)
+            container == "msgpack+lz4blockarray" -> lz4BlockArrayFrame(newInner)
+            container.startsWith("msgpack@+") -> {
+                val n = container.removePrefix("msgpack@+").toIntOrNull()
+                    ?: throw IllegalStateException("非法容器名: $container")
+                if (originalBytes == null || originalBytes.size < n) {
+                    throw IllegalStateException("无法保留 $n 字节前缀（缺少原始文件字节）")
+                }
+                originalBytes.copyOfRange(0, n) + newInner
+            }
+            // unknown / unknown+raw / empty：raw patch 模式产出的就是完整文件字节，原样写
+            else -> newInner
+        }
+        verify(container, encoded, newInner)
+        return encoded
+    }
+
+    /** 自检：encode 产物必须能 decode 回相同 inner，且容器一致。 */
+    fun verify(container: String, encoded: ByteArray, expectedInner: ByteArray) {
+        val back = decode(encoded)
+        val containerOk = when {
+            container == "unknown" || container == "unknown+raw" || container == "empty" -> true
+            container.startsWith("msgpack@+") -> back.container == container
+            container.endsWith("+raw") -> back.container == container.removeSuffix("+raw")
+            else -> back.container == container
+        }
+        if (!containerOk || !back.innerBytes.contentEquals(expectedInner)) {
+            throw IllegalStateException(
+                "写回自检失败: container=$container → ${back.container}, inner ${back.innerBytes.size}/${expectedInner.size}"
+            )
+        }
+        AppLog.i("codec: encode ok container=$container out=${encoded.size}B verify=pass")
+    }
+
+    // ---------- encode helpers ----------
+
+    private fun zlibCompress(data: ByteArray): ByteArray {
+        val def = java.util.zip.Deflater(java.util.zip.Deflater.BEST_SPEED)
+        val out = ByteArrayOutputStream()
+        java.util.zip.DeflaterOutputStream(out, def).use { it.write(data) }
+        return out.toByteArray()
+    }
+
+    private fun gzipCompress(data: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        java.util.zip.GZIPOutputStream(out).use { it.write(data) }
+        return out.toByteArray()
+    }
+
+    private fun lz4BlockFrame(inner: ByteArray): ByteArray {
+        val block = Lz4.compressLiteralBlock(inner)
+        val payload = ByteArrayOutputStream()
+        payload.write(0xD2) // int32
+        payload.write((inner.size ushr 24) and 0xFF)
+        payload.write((inner.size ushr 16) and 0xFF)
+        payload.write((inner.size ushr 8) and 0xFF)
+        payload.write(inner.size and 0xFF)
+        payload.write(block)
+        return extFrame(LZ4_BLOCK, payload.toByteArray())
+    }
+
+    private fun lz4BlockArrayFrame(inner: ByteArray): ByteArray {
+        val block = Lz4.compressLiteralBlock(inner)
+        val lens = byteArrayOf(
+            0xD2.toByte(),
+            ((inner.size ushr 24) and 0xFF).toByte(),
+            ((inner.size ushr 16) and 0xFF).toByte(),
+            ((inner.size ushr 8) and 0xFF).toByte(),
+            (inner.size and 0xFF).toByte(),
+        )
+        val out = ByteArrayOutputStream()
+        out.write(0x92) // array(2)
+        out.write(extFrame(LZ4_BLOCK_ARRAY, lens))
+        out.write(binFrame(block))
+        return out.toByteArray()
+    }
+
+    private fun extFrame(type: Byte, payload: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        when {
+            payload.size <= 0xFF -> { out.write(0xC7); out.write(payload.size) }
+            payload.size <= 0xFFFF -> { out.write(0xC8); out.write((payload.size ushr 8) and 0xFF); out.write(payload.size and 0xFF) }
+            else -> {
+                out.write(0xC9)
+                out.write((payload.size ushr 24) and 0xFF); out.write((payload.size ushr 16) and 0xFF)
+                out.write((payload.size ushr 8) and 0xFF); out.write(payload.size and 0xFF)
+            }
+        }
+        out.write(type.toInt())
+        out.write(payload)
+        return out.toByteArray()
+    }
+
+    private fun binFrame(data: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        when {
+            data.size <= 0xFF -> { out.write(0xC4); out.write(data.size) }
+            data.size <= 0xFFFF -> { out.write(0xC5); out.write((data.size ushr 8) and 0xFF); out.write(data.size and 0xFF) }
+            else -> {
+                out.write(0xC6)
+                out.write((data.size ushr 24) and 0xFF); out.write((data.size ushr 16) and 0xFF)
+                out.write((data.size ushr 8) and 0xFF); out.write(data.size and 0xFF)
+            }
+        }
+        out.write(data)
+        return out.toByteArray()
+    }
+
     // ---------- helpers ----------
 
     private fun tryDecodeLz4Block(ext: MpValue.Ext): DecodedSave? {

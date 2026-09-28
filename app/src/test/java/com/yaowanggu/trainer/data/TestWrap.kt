@@ -58,6 +58,13 @@ object TestWrap {
         return out.toByteArray()
     }
 
+    fun zlib(data: ByteArray, level: Int = java.util.zip.Deflater.BEST_SPEED): ByteArray {
+        val d = java.util.zip.Deflater(level)
+        val out = ByteArrayOutputStream()
+        java.util.zip.DeflaterOutputStream(out, d).use { it.write(data) }
+        return out.toByteArray()
+    }
+
     fun gzip(data: ByteArray): ByteArray {
         val bos = ByteArrayOutputStream()
         java.util.zip.GZIPOutputStream(bos).use { it.write(data) }

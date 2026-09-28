@@ -79,4 +79,24 @@ object Lz4 {
         if (op != outputLength) throw Lz4Exception("decoded size $op != expected $outputLength")
         return out
     }
+
+    /**
+     * 把数据打包成「纯字面量」的合法 LZ4 block（单 sequence，无 match 部分）。
+     * 用于 Lz4Block 容器写回：解码端（含本文件 decompressBlock 与 MessagePack-CSharp）
+     * 在输入耗尽时结束，末尾无 match 是合法块。
+     */
+    fun compressLiteralBlock(data: ByteArray): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val n = data.size
+        if (n >= 15) {
+            out.write(0xF0) // litLen=15 + 扩展链, matchLen=0
+            var rem = n - 15
+            while (rem >= 255) { out.write(255); rem -= 255 }
+            out.write(rem)
+        } else {
+            out.write(n shl 4)
+        }
+        out.write(data)
+        return out.toByteArray()
+    }
 }

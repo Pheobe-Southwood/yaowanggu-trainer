@@ -180,6 +180,44 @@ class SaveLogicTest {
     }
 
     @Test
+    fun zlibPersonsEndToEnd() {
+        // 模拟 nfile30：zlib(msgpack array of person records)，脸在记录尾部且 ID 锚定
+        val rnd = java.util.Random(11)
+        val records = (0 until 10).map { i ->
+            val prefix = List(40 + rnd.nextInt(30)) { if (rnd.nextBoolean()) 0L else -1L }
+            // 每字段按 FaceSchema 上限生成，避免越界导致定位失败
+            val limits = listOf(0, 12, 12, 12, 12, 8, 12, 12, 9, 3, 400, 400, 360, 400, 400, 360, 400, 400, 12, 12)
+            val face = MutableList(20) { j -> if (j == 0) (i + 1).toLong() else rnd.nextInt(limits[j]).toLong() }
+            face[10] = 78; face[12] = 169; face[15] = 229 // 肤色饱和/发色色相/瞳色色相
+            prefix + face.toList() + listOf(0L)
+        }
+        val tree = MpValue.Arr(records.map { MpValue.Arr(it.map { v -> MpValue.Int(v) }) })
+        val inner = MessagePack.serialize(tree)
+        val gameFile = TestWrap.zlib(inner)
+
+        val st = SaveAnalyzer.analyze(gameFile)
+        assertEquals("zlib+msgpack", st.format)
+        assertEquals(10, st.persons.size)
+        val p2 = st.persons[1] // 角色 ID 2
+        assertEquals(2L, p2.charId)
+
+        // 改角色 2 的眼睛（字段 4）→ 应用 → 按原容器重压缩
+        val edited = SaveEditor.apply(st, listOf(
+            SaveEditor.FieldEdit(SaveEditor.FieldRef.TreeField(p2.loc, 4), 11L),
+        ))
+        val out = com.yaowanggu.trainer.data.codec.SaveCodec.encode(st.format, edited, st.bytes)
+        assertEquals(0x78, out[0].toInt() and 0xFF)
+
+        val st2 = SaveAnalyzer.analyze(out)
+        assertEquals("zlib+msgpack", st2.format)
+        assertEquals(10, st2.persons.size)
+        assertEquals(11L, st2.persons[1].faceValues[3])   // 眼睛 = 11
+        assertEquals(2L, st2.persons[1].faceValues[0])    // ID 不变
+        assertEquals(1L, st2.persons[0].faceValues[0])    // 其它角色不受影响
+        assertEquals(st.persons[0].faceValues, st2.persons[0].faceValues)
+    }
+
+    @Test
     fun analyzerFindsRecordsInRawBinary() {
         val face = faceValues()
         val chars = charValues()

@@ -51,8 +51,13 @@ data class SaveStructure(
     val rawMatches: List<RawMatch>,
     /** 解压/去容器后的真正 msgpack 流；raw 模式偏移基于它。plain 时等于 [bytes]。 */
     val innerBytes: ByteArray = bytes,
+    /** 结构化定位到的角色记录（外观模块）；非空时优先于通用评分结果。 */
+    val persons: List<PersonFinder.PersonRecord> = emptyList(),
 ) {
-    val bestFace: RecordMatch? get() = records.firstOrNull { it.kind == RecordKind.FACE }
+    val bestFace: RecordMatch?
+        get() = persons.firstOrNull()?.let {
+            RecordMatch(RecordKind.FACE, it.loc, 24, it.faceValues)
+        } ?: records.firstOrNull { it.kind == RecordKind.FACE }
     val bestChar: RecordMatch? get() = records.firstOrNull { it.kind == RecordKind.CHAR }
 
     override fun equals(other: Any?): Boolean {
@@ -69,8 +74,9 @@ object SaveAnalyzer {
         val dec = com.yaowanggu.trainer.data.codec.SaveCodec.decode(bytes)
         val tree = dec.tree
         if (tree != null) {
+            val persons = PersonFinder.findPersons(tree)
             val records = findRecordsInTree(tree)
-            return SaveStructure(bytes, dec.container, tree, records, emptyList(), dec.innerBytes)
+            return SaveStructure(bytes, dec.container, tree, records, emptyList(), dec.innerBytes, persons)
         }
         val raw = findRecordsInRaw(dec.innerBytes)
         return SaveStructure(bytes, dec.container + "+raw", null, emptyList(), raw, dec.innerBytes)
@@ -149,6 +155,10 @@ object SaveAnalyzer {
         }
         if ((v[12] ?: -1) in 0..400 && (v[13] ?: -1) in 0..400 && (v[14] ?: -1) in 0..400) score += 2
         if ((v[15] ?: -1) in 0..400 && (v[16] ?: -1) in 0..400 && (v[17] ?: -1) in 0..400) score += 2
+        // 退化窗口降权：全零 / 无 ID / 无色相信息的窗口不是真脸（实证：会压过真窗口）
+        if (v.subList(1, FaceSchema.count).all { (it ?: 0L) == 0L }) score -= 8
+        if ((v[0] ?: 0) < 1) score -= 4
+        if ((v[12] ?: 0) == 0L && (v[15] ?: 0) == 0L) score -= 4
         return score
     }
 

@@ -36,6 +36,17 @@ class Lz4Test {
         assertArrayEquals("abcabca".toByteArray(), Lz4.decompressBlock(input, 7))
     }
 
+    @Test
+    fun literalBlockRoundTrip() {
+        val data = ByteArray(1000) { (it % 251).toByte() }
+        val block = Lz4.compressLiteralBlock(data)
+        assertArrayEquals(data, Lz4.decompressBlock(block, data.size))
+        val empty = Lz4.compressLiteralBlock(ByteArray(0))
+        assertArrayEquals(ByteArray(0), Lz4.decompressBlock(empty, 0))
+        val small = "hi".toByteArray()
+        assertArrayEquals(small, Lz4.decompressBlock(Lz4.compressLiteralBlock(small), small.size))
+    }
+
     @Test(expected = Lz4Exception::class)
     fun corruptOffsetThrows() {
         val input = byteArrayOf(0x40, 0x61, 0x62, 0x63, 0x64, 0x09, 0x00)
