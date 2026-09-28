@@ -78,7 +78,11 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p out
-          find dist -name '*.apk' -exec cp {} out/ \;
+          VER="${GITHUB_REF_NAME#v}"
+          for d in dist/*/; do
+            n="$(basename "$d")"; n="${n#yaowanggu-trainer-}"
+            for f in "$d"*.apk; do cp "$f" "out/yaowanggu-trainer-${VER}-${n}.apk"; done
+          done
           ls -la out
           test -n "$(ls -A out)"
 
