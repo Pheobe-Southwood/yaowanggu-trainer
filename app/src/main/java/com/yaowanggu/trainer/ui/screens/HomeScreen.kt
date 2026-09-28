@@ -95,6 +95,36 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
             }
         }
 
+        if (state.strayFiles.isNotEmpty()) {
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("游戏目录有残留文件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "检测到 ${state.strayFiles.size} 个（${state.strayFiles.take(3).joinToString("、")}）。它们可能干扰游戏读写存档，建议移到备份目录。",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { vm.cleanStrayFiles(context) }) { Text("清理残留（移到备份目录）") }
+                    }
+                }
+            }
+        }
+
+        if (state.backupPath != null) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("最近备份：${state.backupPath}", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedButton(onClick = { vm.restoreBackup(context) }, enabled = !state.loading) {
+                            Text("恢复此备份（覆盖当前模块）")
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {

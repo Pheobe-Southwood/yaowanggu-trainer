@@ -46,6 +46,8 @@ data class UiState(
     val moduleInfo: Map<String, ModuleInfo> = emptyMap(),
     /** 当前选中角色在 structure.persons 中的下标 */
     val selectedPerson: Int = 0,
+    /** 游戏目录中的残留文件（tmp / 旧 .bak），非空时提示清理 */
+    val strayFiles: List<String> = emptyList(),
 ) {
     val faceReady: Boolean get() = faceRecord != null || rawFaceOffset != null
     val isTree: Boolean get() = structure?.tree != null
@@ -101,7 +103,15 @@ class TrainerViewModel : ViewModel() {
                 val slots = slots0.sortedBy { it.slot }
                 // 全模块扫描：解码 + 角色定位，找出外观模块
                 val infos = withContext(Dispatchers.IO) { scanModules(ctx, slots) }
-                _state.value = _state.value.copy(slots = slots, gameRunning = running, moduleInfo = infos, loading = false)
+                val stray = withContext(Dispatchers.IO) {
+                    val dir = slots.firstOrNull()?.path?.substringBeforeLast('/')
+                    if (dir != null) runCatching { ShizukuRepository.listStrayFiles(ctx, dir) }.getOrDefault(emptyList()) else emptyList()
+                }
+                if (stray.isNotEmpty()) AppLog.w("loadSlots: stray files in game dir: $stray")
+                _state.value = _state.value.copy(
+                    slots = slots, gameRunning = running, moduleInfo = infos, loading = false, strayFiles = stray,
+                    message = if (stray.isNotEmpty()) "游戏目录检测到 ${stray.size} 个残留文件（${stray.first()}…），建议点「清理残留」移到备份目录，避免干扰游戏读写。" else null,
+                )
                 if (slots.isEmpty()) {
                     _state.value = _state.value.copy(message = "未找到存档文件。请在真机上进入游戏并保存一次后再试；已扫描 /sdcard/Android/data/com.hydrozoa.yyg 与 /sdcard/Android/media/com.hydrozoa.yyg。")
                 } else if (_state.value.slotPath == null) {
@@ -209,6 +219,44 @@ class TrainerViewModel : ViewModel() {
         _state.value = s.copy(selectedPerson = index, faceRecord = face, faceValues = p.faceValues)
     }
 
+    /** 从最近一次备份恢复当前模块（同样走原子写）。 */
+    fun restoreBackup(ctx: Context) {
+        viewModelScope.launch {
+            val s = _state.value
+            val path = s.slotPath ?: return@launch
+            val bak = s.backupPath ?: return@launch
+            try {
+                _state.value = _state.value.copy(loading = true, message = null)
+                withContext(Dispatchers.IO) {
+                    val bytes = ShizukuRepository.readFile(ctx, bak)
+                    ShizukuRepository.writeFileAtomic(ctx, path, bytes) { written ->
+                        check(written.contentEquals(bytes)) { "恢复回读不一致" }
+                    }
+                }
+                AppLog.i("restoreBackup: $bak -> $path")
+                _state.value = _state.value.copy(loading = false, message = "已从备份恢复：$bak")
+                openSlot(ctx, s.slots.firstOrNull { it.path == path } ?: return@launch)
+            } catch (e: Throwable) {
+                AppLog.e("restoreBackup failed: ${e.message}", e)
+                _state.value = _state.value.copy(loading = false, message = "恢复失败: ${e.message}")
+            }
+        }
+    }
+
+    /** 把游戏目录残留文件移到备份目录。 */
+    fun cleanStrayFiles(ctx: Context) {
+        viewModelScope.launch {
+            val dir = _state.value.slots.firstOrNull()?.path?.substringBeforeLast('/') ?: return@launch
+            try {
+                val out = withContext(Dispatchers.IO) { ShizukuRepository.cleanStrayFiles(ctx, dir) }
+                val left = withContext(Dispatchers.IO) { ShizukuRepository.listStrayFiles(ctx, dir) }
+                _state.value = _state.value.copy(strayFiles = left, message = "清理完成（$out），残留 ${left.size} 个。备份在 ${ShizukuRepository.BACKUP_DIR}")
+            } catch (e: Throwable) {
+                _state.value = _state.value.copy(message = "清理失败: ${e.message}")
+            }
+        }
+    }
+
     /** 按角色 ID 跳转选择。 */
     fun selectPersonByCharId(charId: Long) {
         val idx = _state.value.persons.indexOfFirst { it.charId == charId }
@@ -291,14 +339,20 @@ class TrainerViewModel : ViewModel() {
                     return@launch
                 }
                 val prevCharId = s.currentPerson?.charId
+                val expectContainer = st.format
                 val res = withContext(Dispatchers.IO) {
-                    val bak = "$path.bak"
-                    ShizukuRepository.copyFile(ctx, path, bak)
+                    // 备份放游戏目录之外
+                    val bak = ShizukuRepository.backupSave(ctx, path)
                     val newInner = SaveEditor.apply(st, edits)
                     // 按原容器重新打包（zlib 模块必须重新压缩，否则游戏解压失败回退 _backup）
                     val out = SaveCodec.encode(st.format, newInner, st.bytes)
-                    ShizukuRepository.writeFile(ctx, path, out)
-                    // 回读验证
+                    // 原子写：tmp → 自检 → mv → 回读验证
+                    ShizukuRepository.writeFileAtomic(ctx, path, out) { written ->
+                        val dec = SaveCodec.decode(written)
+                        check(dec.container == expectContainer.removeSuffix("+raw")) {
+                            "写回后容器不符: ${dec.container} != $expectContainer"
+                        }
+                    }
                     val check = ShizukuRepository.readFile(ctx, path)
                     val stReload = SaveAnalyzer.analyze(check)
                     val idx = if (prevCharId != null) {
@@ -383,6 +437,8 @@ class TrainerViewModel : ViewModel() {
             appendLine("disabled=${d.disabledReason}")
             d.notes.forEach { appendLine("note: $it") }
             appendLine("openedSlot=${s.slotPath ?: "(none)"} container=${s.structure?.format ?: "-"} innerSize=${s.structure?.innerBytes?.size ?: 0}")
+            appendLine("backupDir=${ShizukuRepository.BACKUP_DIR} lastBackup=${s.backupPath ?: "-"}")
+            appendLine("strayFiles=${s.strayFiles}")
             s.currentPerson?.let {
                 appendLine("selectedPerson: charId=${it.charId} recordIndex=${it.recordIndex} faceStart=${it.loc.startIndex} recordLen=${it.recordLen}")
                 appendLine("faceValues=${it.faceValues}")

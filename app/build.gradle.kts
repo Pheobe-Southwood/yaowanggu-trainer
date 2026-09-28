@@ -12,9 +12,20 @@ android {
         applicationId = "com.yaowanggu.trainer"
         minSdk = 30
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.1.4"
+        versionCode = 6
+        versionName = "0.1.5"
         resourceConfigurations += setOf("zh-rCN")
+    }
+
+    signingConfigs {
+        // 占位符签名：keystore 已提交在仓库 keystore/ 目录，保证历次构建签名一致、可覆盖升级。
+        // 仅用于真机测试分发，不用于任何应用商店。
+        create("placeholder") {
+            storeFile = rootProject.file("keystore/release-placeholder.jks")
+            storePassword = "yygplaceholder"
+            keyAlias = "yygplaceholder"
+            keyPassword = "yygplaceholder"
+        }
     }
 
     buildTypes {
@@ -22,6 +33,7 @@ android {
             isMinifyEnabled = false
         }
         release {
+            signingConfig = signingConfigs.getByName("placeholder")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

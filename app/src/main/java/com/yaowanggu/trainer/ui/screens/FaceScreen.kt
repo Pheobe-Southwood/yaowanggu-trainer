@@ -3,6 +3,7 @@ package com.yaowanggu.trainer.ui.screens
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,8 +46,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.yaowanggu.trainer.data.GameColor
 import com.yaowanggu.trainer.data.schema.FaceField
 import com.yaowanggu.trainer.data.schema.FaceSchema
 import com.yaowanggu.trainer.refs.RefCatalog
@@ -291,21 +294,25 @@ private fun ColorRow(
     onShowChart: (() -> Unit)? = null,
 ) {
     val values = indices.map { vm.currentFaceValue(it) }
-    val s = vm.currentFaceValue(FaceSchema.hairSatIndex)?.toFloat() ?: 0f
-    val v = vm.currentFaceValue(FaceSchema.hairValIndex)?.toFloat() ?: 0f
-    val swatch = when (title) {
-        "瞳色" -> android.graphics.Color.HSVToColor(floatArrayOf(
-            vm.currentFaceValue(FaceSchema.eyeHueIndex)?.toFloat() ?: 0f,
-            (vm.currentFaceValue(FaceSchema.eyeSatIndex)?.toFloat() ?: 0f) / 400f,
-            (vm.currentFaceValue(FaceSchema.eyeValIndex)?.toFloat() ?: 0f) / 400f,
-        ))
-        "发色" -> android.graphics.Color.HSVToColor(floatArrayOf(
-            vm.currentFaceValue(FaceSchema.hairHueIndex)?.toFloat() ?: 0f,
-            (vm.currentFaceValue(FaceSchema.hairSatIndex)?.toFloat() ?: 0f) / 400f,
-            (vm.currentFaceValue(FaceSchema.hairValIndex)?.toFloat() ?: 0f) / 400f,
-        ))
-        else -> android.graphics.Color.HSVToColor(floatArrayOf(30f, s / 400f, v / 400f))
+    // 游戏内颜色映射：镜像色相 + sat/val 按 200 归一（社区色表实证，见 GameColor）
+    val hsv = when (title) {
+        "瞳色" -> GameColor.stdHsv(
+            vm.currentFaceValue(FaceSchema.eyeHueIndex) ?: 0,
+            vm.currentFaceValue(FaceSchema.eyeSatIndex) ?: 0,
+            vm.currentFaceValue(FaceSchema.eyeValIndex) ?: 0,
+        )
+        "发色" -> GameColor.stdHsv(
+            vm.currentFaceValue(FaceSchema.hairHueIndex) ?: 0,
+            vm.currentFaceValue(FaceSchema.hairSatIndex) ?: 0,
+            vm.currentFaceValue(FaceSchema.hairValIndex) ?: 0,
+        )
+        else -> GameColor.skinStdHsv(
+            vm.currentFaceValue(FaceSchema.skinSatIndex) ?: 0,
+            vm.currentFaceValue(FaceSchema.skinValIndex) ?: 0,
+        )
     }
+    val swatch = android.graphics.Color.HSVToColor(hsv)
+    val hex = "#%06X".format(0xFFFFFF and swatch)
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
@@ -316,7 +323,14 @@ private fun ColorRow(
                         Text("参考图", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Box(Modifier.size(28.dp).clip(RoundedCornerShape(4.dp)).background(Color(swatch)))
+                Text(hex, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(swatch))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp)),
+                )
             }
             Spacer(Modifier.height(6.dp))
             indices.forEachIndexed { i, idx ->

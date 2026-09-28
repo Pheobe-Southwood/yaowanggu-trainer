@@ -113,6 +113,67 @@ object ShizukuRepository {
     suspend fun copyFile(context: Context, from: String, to: String) =
         backendFor(context).copyFile(from, to)
 
+    /** 备份目录：放在游戏目录之外，避免任何非游戏文件干扰游戏读写。 */
+    const val BACKUP_DIR = "/sdcard/yaowanggu-trainer/backup"
+
+    /** 把当前存档备份到 [BACKUP_DIR]，返回备份路径。 */
+    suspend fun backupSave(context: Context, path: String): String {
+        val ts = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+        val dst = "$BACKUP_DIR/" + path.substringAfterLast('/') + "-$ts.bak"
+        val out = backendFor(context).exec("mkdir -p '$BACKUP_DIR' && cp -f '$path' '$dst' && echo CP_OK")
+        if (!out.contains("CP_OK")) throw IllegalStateException("backup failed: $out")
+        AppLog.i("backupSave: $path -> $dst")
+        return dst
+    }
+
+    /** 游戏目录中的残留文件（我们的 tmp / 旧版落在游戏目录的 .bak）。 */
+    suspend fun listStrayFiles(context: Context, dir: String): List<String> =
+        runCatching {
+            backendFor(context).exec("ls -1 '$dir' 2>/dev/null | grep -E 'dsh-tmp|\\.save\\.bak$' || true")
+                .lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        }.getOrDefault(emptyList())
+
+    /** 把残留文件移出游戏目录到 [BACKUP_DIR]。 */
+    suspend fun cleanStrayFiles(context: Context, dir: String): String {
+        val out = backendFor(context).exec(
+            "mkdir -p '$BACKUP_DIR'; cd '$dir' && for f in *.dsh-tmp nfile*.save.bak; do " +
+                "[ -e "\$f" ] && mv -f "\$f" '$BACKUP_DIR/'; done; echo CLEAN_OK",
+        )
+        AppLog.i("cleanStrayFiles: dir=$dir out=$out")
+        return out
+    }
+
+    /**
+     * 原子写：tmp → 回读字节自检 → [verify] 语义自检 → mv（同 fs rename 原子）→ 回读最终文件再验证。
+     * 任一步失败：清理 tmp 并抛异常，原文件不受影响。
+     */
+    suspend fun writeFileAtomic(
+        context: Context,
+        path: String,
+        bytes: ByteArray,
+        verify: (ByteArray) -> Unit,
+    ) {
+        val backend = backendFor(context)
+        val tmp = "$path.dsh-tmp"
+        AppLog.i("atomicWrite: start path=$path bytes=${bytes.size}")
+        backend.writeFile(tmp, bytes)
+        val tmpBack = backend.readFile(tmp)
+        if (!tmpBack.contentEquals(bytes)) {
+            runCatching { backend.exec("rm -f '$tmp'") }
+            throw IllegalStateException("tmp 回读不一致: wrote=${bytes.size} read=${tmpBack.size}")
+        }
+        verify(tmpBack)
+        val mvOut = backend.exec("mv -f '$tmp' '$path' && echo MV_OK")
+        if (!mvOut.contains("MV_OK")) {
+            runCatching { backend.exec("rm -f '$tmp'") }
+            throw IllegalStateException("mv 失败: $mvOut")
+        }
+        val finalBack = backend.readFile(path)
+        if (!finalBack.contentEquals(bytes)) throw IllegalStateException("最终回读不一致")
+        verify(finalBack)
+        AppLog.i("atomicWrite: ok path=$path bytes=${finalBack.size}")
+    }
+
     suspend fun gameRunning(context: Context): Boolean =
         runCatching { backendFor(context).isRunning(ShellBackend.GAME_PACKAGE) }.getOrDefault(false)
 
