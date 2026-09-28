@@ -67,7 +67,7 @@ class SaveCodecEncodeTest {
     @Test
     fun lz4BlockLargePayload() {
         // >64KB：ext32/bin16 框路径
-        val inner = MessagePack.serialize(MpValue.Arr(List(20000) { MpValue.Int(it.toLong()) }))
+        val inner = MessagePack.serialize(MpValue.Arr(List(30000) { MpValue.Int(it.toLong()) }))
         assertTrue(inner.size > 65535)
         val enc = SaveCodec.encode("msgpack+lz4block", inner, null)
         val d = SaveCodec.decode(enc)
