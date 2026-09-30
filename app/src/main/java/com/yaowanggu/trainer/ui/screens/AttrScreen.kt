@@ -1,6 +1,7 @@
 package com.yaowanggu.trainer.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,28 +31,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.yaowanggu.trainer.data.schema.CharSchema
+import com.yaowanggu.trainer.data.CharMap
 import com.yaowanggu.trainer.ui.TrainerViewModel
 
 /**
- * 属性页：角色 39 项字段。核心字段（寿元/生日/境界/灵根/灵气/武力…）置顶，
- * 社区表格标注“未知”的字段折叠在最后并注明风险。
+ * 属性页：仅暴露真机校准过的字段（寿元当前/上限、灵气、武力，见 [CharMap]）。
+ * 面板上的灵玉/境界/突破几率/灵根等本轮未唯一定位 → 不显示不可改，防止写坏存档。
  */
 @Composable
 fun AttrScreen(vm: TrainerViewModel) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
-    if (state.charRecord == null && state.rawCharOffset == null) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Text("未定位到角色属性记录。")
+
+    if (state.persons.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("尚未定位角色数据。请回到「存档」页打开外观模块（nfile30）。")
         }
         return
     }
-
-    val core = CharSchema.fields.filter { f -> !f.name.startsWith("未知") && !f.note.contains("未知") }
-    val unknown = CharSchema.fields.filter { f -> f.name.startsWith("未知") || f.note.contains("未知") }
-    var chartSet by remember { mutableStateOf<String?>(null) }
-    chartSet?.let { RefChartDialog(set = it, onClose = { chartSet = null }) }
+    val person = state.currentPerson ?: return
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -60,34 +58,34 @@ fun AttrScreen(vm: TrainerViewModel) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("角色属性（${CharSchema.count} 项）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("角色属性（已校准字段）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        state.charRecord?.let { "位置 ${it.loc.describe()}（匹配度 ${it.score}）" }
-                            ?: "文件偏移 0x%X".format(state.rawCharOffset ?: 0),
+                        "角色 ID ${person.charId} · 记录 #${person.recordIndex} · 灵气/武力 face-20/-19，寿元 face-63/-62（真机校准）",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text("数值应与游戏内属性面板一致；如不一致请导出诊断包发我。", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
 
-        items(core) { f ->
-            CharRow(
-                vm = vm,
-                fieldNo = f.index,
-                label = f.name,
-                enumLabels = f.enumLabels,
-                max = f.max,
-                onShowChart = if (f.index == 9) ({ chartSet = "ear" }) else null,
-            )
+        item { PersonPickerCard(state = state, vm = vm) }
+
+        items(CharMap.slots) { slot ->
+            CharRow(vm = vm, slotKey = slot.key, label = slot.name, max = slot.max)
         }
 
         item {
-            Divider(Modifier.padding(vertical = 8.dp))
-            Text("以下字段社区表格标注为“未知”，修改风险自负", color = MaterialTheme.colorScheme.error)
-        }
-        items(unknown) { f ->
-            CharRow(vm, f.index, "${f.name} ⚠", f.enumLabels, f.max)
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("未映射字段", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                    Text(
+                        "灵玉（灵石）、境界、突破几率、灵根、出生年月等尚未在存档中唯一定位，本轮不开放修改以避免写坏存档；" +
+                            "后续版本用双包差分分析补齐。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
 
         item {
@@ -98,6 +96,10 @@ fun AttrScreen(vm: TrainerViewModel) {
                 }
                 OutlinedButton(onClick = { vm.discardPending() }, enabled = state.pending.isNotEmpty()) { Text("放弃") }
             }
+            if (state.backupPath != null) {
+                Spacer(Modifier.height(4.dp))
+                Text("备份：${state.backupPath}", style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -105,40 +107,41 @@ fun AttrScreen(vm: TrainerViewModel) {
 @Composable
 private fun CharRow(
     vm: TrainerViewModel,
-    fieldNo: Int,
+    slotKey: String,
     label: String,
-    enumLabels: Map<Int, String>,
-    max: Int,
-    onShowChart: (() -> Unit)? = null,
+    max: Long,
 ) {
-    val current = vm.currentCharValue(fieldNo)
-    var draft by remember(fieldNo, current) { mutableStateOf(current?.toString() ?: "") }
+    val current = vm.currentCharValue(slotKey)
+    var draft by remember(slotKey, current) { mutableStateOf(current?.toString() ?: "") }
 
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("$label（字段 $fieldNo）", fontWeight = FontWeight.Medium)
-                if (enumLabels.isNotEmpty()) {
-                    Text(
-                        enumLabels.entries.joinToString("  ") { "${it.key}=${it.value}" },
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+                Text(label, fontWeight = FontWeight.Medium)
+                Text("当前：${current ?: "—"}", style = MaterialTheme.typography.bodySmall)
             }
+            OutlinedButton(onClick = {
+                val v = ((current ?: 0) - 10).coerceIn(0, max)
+                vm.stageCharEdit(slotKey, v)
+                draft = v.toString()
+            }) { Text("−10") }
+            Spacer(Modifier.width(4.dp))
             OutlinedTextField(
                 value = draft,
-                onValueChange = { draft = it.filter { c -> c.isDigit() } },
+                onValueChange = { draft = it.filter { c -> c.isDigit() }.take(9) },
                 singleLine = true,
-                modifier = Modifier.width(120.dp),
+                modifier = Modifier.width(110.dp),
             )
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = { draft.toLongOrNull()?.let { vm.stageCharEdit(fieldNo, it.coerceIn(0, max.toLong())) } },
-            ) { Text("改") }
-            if (onShowChart != null) {
-                Spacer(Modifier.width(4.dp))
-                OutlinedButton(onClick = onShowChart) { Text("图") }
-            }
+            Spacer(Modifier.width(4.dp))
+            OutlinedButton(onClick = {
+                val v = ((current ?: 0) + 10).coerceIn(0, max)
+                vm.stageCharEdit(slotKey, v)
+                draft = v.toString()
+            }) { Text("+10") }
+            Spacer(Modifier.width(4.dp))
+            Button(onClick = {
+                draft.toLongOrNull()?.let { vm.stageCharEdit(slotKey, it.coerceIn(0, max)) }
+            }) { Text("改") }
         }
     }
 }

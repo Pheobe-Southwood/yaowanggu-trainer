@@ -90,7 +90,7 @@ fun AppRoot(vm: TrainerViewModel) {
                 NavigationBarItem(
                     selected = screen == Screen.ATTR,
                     onClick = { screen = Screen.ATTR },
-                    enabled = state.charRecord != null || state.rawCharOffset != null,
+                    enabled = state.persons.isNotEmpty() || state.rawCharOffset != null,
                     icon = { Icon(Icons.Filled.Settings, null) },
                     label = { Text("属性") },
                 )

@@ -4,7 +4,10 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yaowanggu.trainer.data.CharMap
+import com.yaowanggu.trainer.data.PathStep
 import com.yaowanggu.trainer.data.PersonFinder
+import com.yaowanggu.trainer.data.SeqLocation
 import com.yaowanggu.trainer.data.RecordKind
 import com.yaowanggu.trainer.data.RecordMatch
 import com.yaowanggu.trainer.data.SaveAnalyzer
@@ -276,8 +279,10 @@ class TrainerViewModel : ViewModel() {
         _state.value = _state.value.copy(pending = _state.value.pending + (k to value))
     }
 
-    fun stageCharEdit(fieldNo: Int, value: Long) {
-        val k = "char:$fieldNo"
+    /** 属性编辑键：char:<recordIndex>:<slotKey>，定位到选中角色记录内的校准偏移。 */
+    fun stageCharEdit(slotKey: String, value: Long) {
+        val rec = _state.value.currentPerson?.recordIndex ?: return
+        val k = "char:$rec:$slotKey"
         _state.value = _state.value.copy(pending = _state.value.pending + (k to value))
     }
 
@@ -319,12 +324,27 @@ class TrainerViewModel : ViewModel() {
                             }
                         }
                         k.startsWith("char:") -> {
-                            val no = k.removePrefix("char:").toInt()
-                            val charMatch = s.charRecord
-                            if (charMatch != null) edits.add(SaveEditor.FieldEdit(SaveEditor.FieldRef.TreeField(charMatch.loc, no), v))
-                            else {
-                                val off = s.rawCharOffset
-                                if (off != null) edits.add(SaveEditor.FieldEdit(SaveEditor.FieldRef.RawField(off + (no - 1) * 4), v))
+                            val rest = k.removePrefix("char:")
+                            val sep = rest.indexOf(':')
+                            if (sep > 0) {
+                                val ri = rest.substring(0, sep).toIntOrNull()
+                                val key = rest.substring(sep + 1)
+                                val person = ri?.let { r -> s.persons.firstOrNull { it.recordIndex == r } }
+                                val slot = CharMap.slots.firstOrNull { it.key == key }
+                                val off = if (person != null && slot != null) CharMap.offsetOf(person, slot) else null
+                                if (person != null && off != null) {
+                                    edits.add(
+                                        SaveEditor.FieldEdit(
+                                            SaveEditor.FieldRef.TreeField(
+                                                SeqLocation(listOf(PathStep.Index(person.recordIndex)), 0),
+                                                off + 1,
+                                            ),
+                                            v,
+                                        )
+                                    )
+                                } else {
+                                    AppLog.w("writeBack: unmapped char edit ignored: $k")
+                                }
                             }
                         }
                         k.startsWith("rawface:") -> {
@@ -397,15 +417,14 @@ class TrainerViewModel : ViewModel() {
         }
     }
 
-    fun currentCharValue(fieldNo: Int): Long? {
+    fun currentCharValue(slotKey: String): Long? {
         val s = _state.value
-        val staged = s.pending["char:$fieldNo"]
+        val person = s.currentPerson ?: return null
+        val rec = person.recordIndex
+        val staged = s.pending["char:$rec:$slotKey"]
         if (staged != null) return staged
-        return when {
-            s.charRecord != null && s.charRecord.values.size >= fieldNo -> s.charRecord.values[fieldNo - 1]
-            s.rawCharOffset != null -> readLe32(s.structure?.innerBytes, s.rawCharOffset + (fieldNo - 1) * 4)
-            else -> null
-        }
+        val slot = CharMap.slots.firstOrNull { it.key == slotKey } ?: return null
+        return CharMap.valueOf(person, slot)
     }
 
     private fun readLe32(b: ByteArray?, off: Int): Long? {

@@ -27,6 +27,8 @@ object PersonFinder {
         /** 记录中最大的两个 int（疑似灵气/武力），用于与游戏内数值对照确认玩家角色 */
         val hints: List<Long>,
         val recordLen: Int,
+        /** 整条记录的全部 int 值（供 CharMap 按偏移读取属性字段） */
+        val recordValues: List<Long?> = emptyList(),
     )
 
     fun findPersons(tree: MpValue?): List<PersonRecord> {
@@ -68,6 +70,7 @@ object PersonFinder {
                     faceValues = w,
                     hints = hints,
                     recordLen = vals.size,
+                    recordValues = vals,
                 )
             )
         }
