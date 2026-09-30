@@ -31,8 +31,11 @@ class CharMapTest {
 
     @Test
     fun calibratedOffsetsReadPanelValues() {
-        val st = structureOf(listOf(record(1, 10, 60, 0, 1), record(2, 23, 60, 5, 7)))
-        assertEquals(2, st.persons.size)
+        val st = structureOf(listOf(
+            record(1, 10, 60, 0, 1), record(2, 23, 60, 5, 7),
+            record(3, 15, 80, 2, 3), record(4, 40, 200, 9, 9),
+        ))
+        assertEquals(4, st.persons.size)
         val p0 = st.persons[0]
         assertEquals(10L, CharMap.valueOf(p0, CharMap.slots[0]))   // 寿元当前
         assertEquals(60L, CharMap.valueOf(p0, CharMap.slots[1]))   // 寿元上限
@@ -41,11 +44,18 @@ class CharMapTest {
         val p1 = st.persons[1]
         assertEquals(23L, CharMap.valueOf(p1, CharMap.slots[0]))
         assertEquals(7L, CharMap.valueOf(p1, CharMap.slots[3]))
+        val p3 = st.persons[3]
+        assertEquals(40L, CharMap.valueOf(p3, CharMap.slots[0]))
+        assertEquals(200L, CharMap.valueOf(p3, CharMap.slots[1]))
     }
 
     @Test
     fun editRoundTripThroughZlibContainer() {
-        val tree = MpValue.Arr(listOf(record(1, 10, 60, 0, 1)).map { MpValue.Arr(it.map { MpValue.Int(it) }) })
+        val recs = listOf(
+            record(1, 10, 60, 0, 1), record(2, 23, 60, 5, 7),
+            record(3, 15, 80, 2, 3), record(4, 40, 200, 9, 9),
+        )
+        val tree = MpValue.Arr(recs.map { MpValue.Arr(it.map { MpValue.Int(it) }) })
         val inner = MessagePack.serialize(tree)
         val gameFile = TestWrap.zlib(inner)
         val st = SaveAnalyzer.analyze(gameFile)
@@ -70,7 +80,8 @@ class CharMapTest {
         val short = MutableList(30) { 0L }
         val face = listOf(1L, 1, 2, 3, 4, 5, 6, 7, 8, 0, 78, 118, 169, 84, 56, 229, 79, 161, 10, 8)
         for (j in face.indices) short[10 + j] = face[j]
-        val tree = MpValue.Arr(listOf(MpValue.Arr(short.map { MpValue.Int(it) })))
+        val recs = (1..4).map { id -> short.toMutableList().also { it[10] = id.toLong() } }
+        val tree = MpValue.Arr(recs.map { MpValue.Arr(it.map { MpValue.Int(it) }) })
         val st = SaveAnalyzer.analyze(MessagePack.serialize(tree))
         if (st.persons.isNotEmpty()) {
             assertNull(CharMap.offsetOf(st.persons[0], CharMap.slots[0]))
