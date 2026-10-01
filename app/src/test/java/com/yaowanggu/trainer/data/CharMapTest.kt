@@ -12,10 +12,10 @@ class CharMapTest {
     /** 合成记录：face@84 → 寿元@21/22、灵气/武力@64/65（face-63/-62/-20/-19）。 */
     private fun record(id: Int, life: Long, lifeMax: Long, qi: Long, power: Long): List<Long> {
         val r = MutableList(105) { 0L }
-        r[21] = life
-        r[22] = lifeMax
-        r[64] = qi
-        r[65] = power
+        r[35] = life   // face@84 → face-49
+        r[22] = lifeMax // face-62
+        r[64] = qi      // face-20
+        r[65] = power   // face-19
         val face = listOf(
             id.toLong(), 0, 1, 1, 1, 1, 1, 1, 2, 0,
             78, 118, 169, 84, 56, 229, 79, 161, 10, 8,
@@ -61,7 +61,7 @@ class CharMapTest {
         val st = SaveAnalyzer.analyze(gameFile)
         val p = st.persons[0]
         val off = CharMap.offsetOf(p, CharMap.slots[0])!!
-        assertEquals(21, off)
+        assertEquals(35, off)
 
         val edited = SaveEditor.apply(st, listOf(
             SaveEditor.FieldEdit(SaveEditor.FieldRef.TreeField(SeqLocation(listOf(PathStep.Index(0)), 0), off + 1), 999L),

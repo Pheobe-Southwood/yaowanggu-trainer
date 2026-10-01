@@ -12,8 +12,8 @@ android {
         applicationId = "com.yaowanggu.trainer"
         minSdk = 30
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.1.8"
+        versionCode = 10
+        versionName = "0.1.9"
         resourceConfigurations += setOf("zh-rCN")
     }
 

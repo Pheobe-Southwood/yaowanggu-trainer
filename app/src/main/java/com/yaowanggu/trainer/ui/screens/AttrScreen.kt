@@ -87,6 +87,7 @@ fun AttrScreen(vm: TrainerViewModel) {
                 desc = slot.desc,
                 max = slot.max,
                 current = values[slot.key],
+                editable = slot.editable,
             )
         }
 
@@ -127,6 +128,7 @@ private fun CharRow(
     desc: String,
     max: Long,
     current: Long?,
+    editable: Boolean = true,
 ) {
     var draft by remember(slotKey, current) { mutableStateOf(current?.toString() ?: "") }
 
@@ -143,29 +145,33 @@ private fun CharRow(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f),
                 )
-                OutlinedButton(onClick = {
-                    val v = ((current ?: 0) - 10).coerceIn(0, max)
-                    vm.stageCharEdit(slotKey, v)
-                    draft = v.toString()
-                }) { Text("−10") }
-                OutlinedButton(onClick = {
-                    val v = ((current ?: 0) + 10).coerceIn(0, max)
-                    vm.stageCharEdit(slotKey, v)
-                    draft = v.toString()
-                }) { Text("+10") }
+                if (editable) {
+                    OutlinedButton(onClick = {
+                        val v = ((current ?: 0) - 10).coerceIn(0, max)
+                        vm.stageCharEdit(slotKey, v)
+                        draft = v.toString()
+                    }) { Text("−10") }
+                    OutlinedButton(onClick = {
+                        val v = ((current ?: 0) + 10).coerceIn(0, max)
+                        vm.stageCharEdit(slotKey, v)
+                        draft = v.toString()
+                    }) { Text("+10") }
+                }
             }
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it.filter { c -> c.isDigit() }.take(9) },
-                    label = { Text("改成") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = {
-                    draft.toLongOrNull()?.let { vm.stageCharEdit(slotKey, it.coerceIn(0, max)) }
-                }) { Text("写入修改") }
+            if (editable) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it.filter { c -> c.isDigit() }.take(9) },
+                        label = { Text("改成") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(onClick = {
+                        draft.toLongOrNull()?.let { vm.stageCharEdit(slotKey, it.coerceIn(0, max)) }
+                    }) { Text("写入修改") }
+                }
             }
         }
     }
