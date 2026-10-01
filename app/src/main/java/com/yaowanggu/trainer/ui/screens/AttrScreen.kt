@@ -131,38 +131,42 @@ private fun CharRow(
     var draft by remember(slotKey, current) { mutableStateOf(current?.toString() ?: "") }
 
     Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(label, fontWeight = FontWeight.Medium)
-                Text(desc, style = MaterialTheme.typography.bodySmall)
+        Column(Modifier.padding(12.dp)) {
+            Text(label, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            Text(desc, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "游戏内数值：${current ?: "—"}",
-                    style = MaterialTheme.typography.bodySmall,
+                    "游戏内：${current ?: "—"}",
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
                 )
+                OutlinedButton(onClick = {
+                    val v = ((current ?: 0) - 10).coerceIn(0, max)
+                    vm.stageCharEdit(slotKey, v)
+                    draft = v.toString()
+                }) { Text("−10") }
+                OutlinedButton(onClick = {
+                    val v = ((current ?: 0) + 10).coerceIn(0, max)
+                    vm.stageCharEdit(slotKey, v)
+                    draft = v.toString()
+                }) { Text("+10") }
             }
-            OutlinedButton(onClick = {
-                val v = ((current ?: 0) - 10).coerceIn(0, max)
-                vm.stageCharEdit(slotKey, v)
-                draft = v.toString()
-            }) { Text("−10") }
-            Spacer(Modifier.width(4.dp))
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it.filter { c -> c.isDigit() }.take(9) },
-                singleLine = true,
-                modifier = Modifier.width(110.dp),
-            )
-            Spacer(Modifier.width(4.dp))
-            OutlinedButton(onClick = {
-                val v = ((current ?: 0) + 10).coerceIn(0, max)
-                vm.stageCharEdit(slotKey, v)
-                draft = v.toString()
-            }) { Text("+10") }
-            Spacer(Modifier.width(4.dp))
-            Button(onClick = {
-                draft.toLongOrNull()?.let { vm.stageCharEdit(slotKey, it.coerceIn(0, max)) }
-            }) { Text("改") }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it.filter { c -> c.isDigit() }.take(9) },
+                    label = { Text("改成") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(onClick = {
+                    draft.toLongOrNull()?.let { vm.stageCharEdit(slotKey, it.coerceIn(0, max)) }
+                }) { Text("写入修改") }
+            }
         }
     }
 }

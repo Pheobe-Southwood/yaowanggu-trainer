@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,6 +37,7 @@ fun PersonPickerCard(state: UiState, vm: TrainerViewModel) {
     val sel = state.selectedPerson.coerceIn(0, persons.size - 1)
     val p = persons[sel]
     var jump by remember { mutableStateOf("") }
+    val context = LocalContext.current
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -51,7 +53,10 @@ fun PersonPickerCard(state: UiState, vm: TrainerViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { vm.selectPerson(sel - 1) }, enabled = sel > 0) { Text("上一个") }
                 Column(Modifier.weight(1f)) {
-                    Text("角色 ID ${p.charId}", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (state.markedCharId == p.charId) "角色 ID ${p.charId} ★主角" else "角色 ID ${p.charId}",
+                        fontWeight = FontWeight.Bold,
+                    )
                     Text(
                         "寿元 ${CharMap.valueOf(p, CharMap.slots[0]) ?: "—"}/${CharMap.valueOf(p, CharMap.slots[1]) ?: "—"}" +
                             " · 灵气 ${CharMap.valueOf(p, CharMap.slots[2]) ?: "—"}" +
@@ -61,6 +66,20 @@ fun PersonPickerCard(state: UiState, vm: TrainerViewModel) {
                     Text("记录 #${p.recordIndex} · 长度 ${p.recordLen}", style = MaterialTheme.typography.bodySmall)
                 }
                 OutlinedButton(onClick = { vm.selectPerson(sel + 1) }, enabled = sel < persons.size - 1) { Text("下一个") }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.markProtagonist(context) }) {
+                    Text(if (state.markedCharId == p.charId) "已标记为主角 ★" else "标记为主角")
+                }
+            }
+            if (state.markedCharId == null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "尚未标记主角：当前默认显示 ID 1（可能是 NPC）。请切换到你的主角（对照上面寿元/灵气/武力与游戏面板）后点「标记为主角」，之后每次打开存档都会自动选中。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

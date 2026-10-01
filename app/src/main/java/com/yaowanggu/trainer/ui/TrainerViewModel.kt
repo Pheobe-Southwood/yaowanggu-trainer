@@ -51,6 +51,8 @@ data class UiState(
     val selectedPerson: Int = 0,
     /** 游戏目录中的残留文件（tmp / 旧 .bak），非空时提示清理 */
     val strayFiles: List<String> = emptyList(),
+    /** 用户标记的主角 charId（持久化）；未标记为 null */
+    val markedCharId: Long? = null,
 ) {
     val faceReady: Boolean get() = faceRecord != null || rawFaceOffset != null
     val isTree: Boolean get() = structure?.tree != null
@@ -189,6 +191,7 @@ class TrainerViewModel : ViewModel() {
                     else -> "此模块未检测到外观数据（${st.format}），可在列表中选择其它模块"
                 }
                 AppLog.i("openSlot ${slot.slot}: container=${st.format} inner=${st.innerBytes.size} persons=${st.persons.size} face=${face != null} rawFace=${rawFace != null} records=${st.records.size}")
+                val marked = readMarkedCharId(ctx)
                 val msg = if (running) "⚠️ 游戏正在运行，修改会被覆盖！\n$baseMsg" else baseMsg
                 _state.value = _state.value.copy(
                     loading = false,
@@ -202,7 +205,8 @@ class TrainerViewModel : ViewModel() {
                     charValues = char?.values ?: emptyList(),
                     rawFaceOffset = rawFace,
                     rawCharOffset = rawChar,
-                    selectedPerson = 0,
+                    selectedPerson = markedIndex(st.persons, marked),
+                    markedCharId = marked,
                     pending = emptyMap(),
                     backupPath = null,
                 )
@@ -211,6 +215,30 @@ class TrainerViewModel : ViewModel() {
                 _state.value = _state.value.copy(loading = false, message = "打开存档失败: ${e.message}")
             }
         }
+    }
+
+    private fun readMarkedCharId(ctx: Context): Long? {
+        val id = runCatching {
+            ctx.getSharedPreferences("dsh_prefs", Context.MODE_PRIVATE).getLong("protagonist_char_id", -1L)
+        }.getOrDefault(-1L)
+        return if (id > 0) id else null
+    }
+
+    private fun markedIndex(persons: List<PersonFinder.PersonRecord>, marked: Long?): Int {
+        if (marked == null) return 0
+        val idx = persons.indexOfFirst { it.charId == marked }
+        return if (idx >= 0) idx else 0
+    }
+
+    /** 标记当前选中角色为主角（charId 持久化；charId 跨存档重排稳定）。 */
+    fun markProtagonist(ctx: Context) {
+        val p = _state.value.currentPerson ?: return
+        runCatching {
+            ctx.getSharedPreferences("dsh_prefs", Context.MODE_PRIVATE).edit()
+                .putLong("protagonist_char_id", p.charId).apply()
+        }
+        AppLog.i("markProtagonist: charId=${p.charId}")
+        _state.value = _state.value.copy(markedCharId = p.charId)
     }
 
     /** 切换选中角色（persons 下标）。 */
