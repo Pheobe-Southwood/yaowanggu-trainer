@@ -360,14 +360,17 @@ class TrainerViewModel : ViewModel() {
                                 val person = ri?.let { r -> s.persons.firstOrNull { it.recordIndex == r } }
                                 val slot = CharMap.slots.firstOrNull { it.key == key }
                                 val off = if (person != null && slot != null) CharMap.offsetOf(person, slot) else null
-                                if (person != null && off != null) {
+                                if (person != null && slot != null && off != null) {
+                                    // pending 存的是面板显示值；按槽位定点倍数换算成存档原值（灵气 ×100）
+                                    val raw = CharMap.rawFor(slot, v)
+                                    AppLog.i("writeBack: char edit $k display=$v -> raw=$raw (scale=${slot.scale})")
                                     edits.add(
                                         SaveEditor.FieldEdit(
                                             SaveEditor.FieldRef.TreeField(
                                                 SeqLocation(listOf(PathStep.Index(person.recordIndex)), 0),
                                                 off + 1,
                                             ),
-                                            v,
+                                            raw,
                                         )
                                     )
                                 } else {
@@ -489,6 +492,13 @@ class TrainerViewModel : ViewModel() {
             s.currentPerson?.let {
                 appendLine("selectedPerson: charId=${it.charId} recordIndex=${it.recordIndex} faceStart=${it.loc.startIndex} recordLen=${it.recordLen}")
                 appendLine("faceValues=${it.faceValues}")
+                appendLine(
+                    "charFields: realm=${CharMap.realmOf(it)} stage=${CharMap.stageOf(it)} life=${CharMap.valueOf(it, CharMap.slot("life")!!)}" +
+                        " lifeMaxDerived=${CharMap.lifeMaxOf(it)} qiRaw=${CharMap.rawValueOf(it, CharMap.slot("qi")!!)}" +
+                        " qi=${CharMap.valueOf(it, CharMap.slot("qi")!!)} qiMaxDerived=${CharMap.qiMaxOf(it)}" +
+                        " power=${CharMap.valueOf(it, CharMap.slot("power")!!)} bt=${CharMap.breakthroughOf(it)}" +
+                        " birth=${CharMap.birthOf(it)} roots=${CharMap.rootsString(it)}",
+                )
             }
             appendLine("--- 模块列表 ---")
             s.slots.forEach {

@@ -58,9 +58,10 @@ fun PersonPickerCard(state: UiState, vm: TrainerViewModel) {
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        "寿元 ${CharMap.valueOf(p, CharMap.slots[0]) ?: "—"}/${CharMap.valueOf(p, CharMap.slots[1]) ?: "—"}" +
-                            " · 灵气 ${CharMap.valueOf(p, CharMap.slots[2]) ?: "—"}" +
-                            " · 武力 ${CharMap.valueOf(p, CharMap.slots[3]) ?: "—"}",
+                        "寿元 ${CharMap.valueOf(p, CharMap.slot("life")!!) ?: "—"}/${CharMap.lifeMaxOf(p) ?: "—"}" +
+                            " · 灵气 ${CharMap.valueOf(p, CharMap.slot("qi")!!) ?: "—"}${CharMap.qiMaxOf(p)?.let { "/$it" } ?: ""}" +
+                            " · 武力 ${CharMap.valueOf(p, CharMap.slot("power")!!) ?: "—"}" +
+                            " · ${CharMap.realmText(p)}",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text("记录 #${p.recordIndex} · 长度 ${p.recordLen}", style = MaterialTheme.typography.bodySmall)

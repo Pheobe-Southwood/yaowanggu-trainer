@@ -35,8 +35,8 @@ import com.yaowanggu.trainer.data.CharMap
 import com.yaowanggu.trainer.ui.TrainerViewModel
 
 /**
- * 属性页：仅暴露真机校准过的字段（寿元当前/上限、灵气、武力，见 [CharMap]）。
- * 面板上的灵玉/境界/突破几率/灵根等本轮未唯一定位 → 不显示不可改，防止写坏存档。
+ * 属性页：v0.1.10 校准字段（寿元前数 face−49、灵气 face−20 ×100 定点、武力 face−19）可写；
+ * 寿元上限/灵气上限由境界派生（存档不存储），境界/突破几率/生日/灵根只读展示，与游戏面板逐 chip 对齐。
  */
 @Composable
 fun AttrScreen(vm: TrainerViewModel) {
@@ -59,6 +59,12 @@ fun AttrScreen(vm: TrainerViewModel) {
     }
     val values = CharMap.slots.associate { it.key to currentValue(it) }
 
+    // 派生展示（只读）：上限不存储，由境界查表；未验证的境界显示 —
+    val realm = CharMap.realmOf(person)
+    val lifeMax = CharMap.lifeMaxFor(realm)
+    val qiMax = CharMap.qiMaxFor(realm)
+    val birth = CharMap.birthOf(person)
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -66,13 +72,16 @@ fun AttrScreen(vm: TrainerViewModel) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("角色属性（已校准字段）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("角色属性（v0.1.10 校准）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "角色 ID ${person.charId} · 记录 #${person.recordIndex} · 灵气/武力 face-20/-19，寿元 face-63/-62（真机校准）",
+                        "角色 ID ${person.charId} · 记录 #${person.recordIndex} · 寿元 face−49、灵气 face−20（×100 定点）、武力 face−19",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    Text("数值应与游戏内属性面板一致；如不一致请导出诊断包发我。", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "数值应与游戏内属性面板一致；上限随境界派生（存档不存储）。如仍不一致请导出诊断包发我。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -80,13 +89,24 @@ fun AttrScreen(vm: TrainerViewModel) {
         item { PersonPickerCard(state = state, vm = vm) }
 
         items(CharMap.slots) { slot ->
+            val suffix = when (slot.key) {
+                "life" -> "/${lifeMax ?: "—"}"
+                "qi" -> qiMax?.let { "/$it" } ?: ""
+                "power" -> values["power"]?.let { "/$it" } ?: ""
+                else -> ""
+            }
+            val displayMax = when (slot.key) {
+                "qi" -> qiMax ?: (slot.max / slot.scale)
+                else -> slot.max
+            }
             CharRow(
                 vm = vm,
                 slotKey = slot.key,
                 label = slot.name,
                 desc = slot.desc,
-                max = slot.max,
+                max = displayMax,
                 current = values[slot.key],
+                suffix = suffix,
                 editable = slot.editable,
             )
         }
@@ -94,10 +114,30 @@ fun AttrScreen(vm: TrainerViewModel) {
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
+                    Text("面板对照（只读·派生）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    InfoRow("境界", CharMap.realmText(person))
+                    InfoRow("寿元上限", lifeMax?.toString() ?: "—（该境界未验证，不臆造）")
+                    InfoRow("灵气上限", qiMax?.toString() ?: "—（该境界未验证，不臆造）")
+                    InfoRow("突破几率", CharMap.breakthroughOf(person)?.let { "$it%" } ?: "—")
+                    InfoRow("生日", if (birth.first != null) "${birth.first}月${birth.second ?: 0}日" else "—")
+                    InfoRow("灵根", CharMap.rootsString(person))
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "上限/境界/灵根等在存档中无独立存储字段（或仅随境界派生），故只读；强行写 face−62 等旧偏移游戏内无效。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
                     Text("未映射字段", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                     Text(
-                        "灵玉（灵石）、境界、突破几率、灵根、出生年月等尚未在存档中唯一定位，本轮不开放修改以避免写坏存档；" +
-                            "后续版本用双包差分分析补齐。",
+                        "灵石/库存/贡献度等位于加密模块（nfile0–4），当前无法安全读写，暂不开放；" +
+                            "后续版本如取得解密线索再扩展。",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -121,6 +161,19 @@ fun AttrScreen(vm: TrainerViewModel) {
 }
 
 @Composable
+private fun InfoRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(72.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
 private fun CharRow(
     vm: TrainerViewModel,
     slotKey: String,
@@ -128,6 +181,7 @@ private fun CharRow(
     desc: String,
     max: Long,
     current: Long?,
+    suffix: String = "",
     editable: Boolean = true,
 ) {
     var draft by remember(slotKey, current) { mutableStateOf(current?.toString() ?: "") }
@@ -140,7 +194,7 @@ private fun CharRow(
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "游戏内：${current ?: "—"}",
+                    "游戏内：${current ?: "—"}$suffix",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f),
