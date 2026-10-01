@@ -19,14 +19,15 @@ object CharMap {
         /** 相对 faceStart 的偏移（负数） */
         val faceRel: Int,
         val max: Long,
-        val note: String = "",
+        /** 面向用户的说明：对应游戏面板的哪个数 */
+        val desc: String = "",
     )
 
     val slots: List<CharSlot> = listOf(
-        CharSlot("life", "寿元（当前）", -63, 1_000_000),
-        CharSlot("lifeMax", "寿元（上限）", -62, 1_000_000),
-        CharSlot("qi", "灵气", -20, 99_999_999),
-        CharSlot("power", "武力", -19, 99_999_999),
+        CharSlot("life", "寿元·当前", -63, 1_000_000, desc = "游戏面板「寿元 10/60」斜杠前的数（例：10）"),
+        CharSlot("lifeMax", "寿元·上限", -62, 1_000_000, desc = "游戏面板「寿元 10/60」斜杠后的数（例：60）"),
+        CharSlot("qi", "灵气·当前", -20, 99_999_999, desc = "游戏面板「灵气 0/0」斜杠前的数"),
+        CharSlot("power", "武力·当前", -19, 99_999_999, desc = "游戏面板「武力 1/1」斜杠前的数"),
     )
 
     /** 该角色记录内某字段的绝对下标；记录太短（faceStart 不足）返回 null。 */

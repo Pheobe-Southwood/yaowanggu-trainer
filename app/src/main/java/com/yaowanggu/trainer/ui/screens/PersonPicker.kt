@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.yaowanggu.trainer.data.CharMap
 import com.yaowanggu.trainer.ui.TrainerViewModel
 import com.yaowanggu.trainer.ui.UiState
 
@@ -52,10 +53,12 @@ fun PersonPickerCard(state: UiState, vm: TrainerViewModel) {
                 Column(Modifier.weight(1f)) {
                     Text("角色 ID ${p.charId}", fontWeight = FontWeight.Bold)
                     Text(
-                        "记录 #${p.recordIndex} · 长度 ${p.recordLen}" +
-                            if (p.hints.isNotEmpty()) " · 提示值 ${p.hints.joinToString(" / ")}" else "",
+                        "寿元 ${CharMap.valueOf(p, CharMap.slots[0]) ?: "—"}/${CharMap.valueOf(p, CharMap.slots[1]) ?: "—"}" +
+                            " · 灵气 ${CharMap.valueOf(p, CharMap.slots[2]) ?: "—"}" +
+                            " · 武力 ${CharMap.valueOf(p, CharMap.slots[3]) ?: "—"}",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text("记录 #${p.recordIndex} · 长度 ${p.recordLen}", style = MaterialTheme.typography.bodySmall)
                 }
                 OutlinedButton(onClick = { vm.selectPerson(sel + 1) }, enabled = sel < persons.size - 1) { Text("下一个") }
             }

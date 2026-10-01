@@ -80,6 +80,9 @@ fun FaceScreen(vm: TrainerViewModel) {
         it.kind == FaceField.Kind.OPTION || it.kind == FaceField.Kind.MOLE || it.kind == FaceField.Kind.TRAIT
     }
     var chartSet by remember { mutableStateOf<String?>(null) }
+    // 在 body（已订阅 state）里取全部当前值：item lambda 内读 StateFlow.value 不被 Compose 跟踪，
+    // 切换角色后行内数值不会刷新（v0.1.6 同类 bug）。
+    val faceVals: Map<Int, Long?> = FaceSchema.fields.associate { f -> f.index to vm.currentFaceValue(f.index) }
 
     chartSet?.let { RefChartDialog(set = it, onClose = { chartSet = null }) }
 
@@ -107,7 +110,7 @@ fun FaceScreen(vm: TrainerViewModel) {
         }
 
         items(parts) { f ->
-            val current = vm.currentFaceValue(f.index)
+            val current = faceVals[f.index]
             PartRow(
                 field = f,
                 current = current,
@@ -128,6 +131,7 @@ fun FaceScreen(vm: TrainerViewModel) {
                 labels = listOf("色相", "饱和", "明暗"),
                 indices = listOf(FaceSchema.hairHueIndex, FaceSchema.hairSatIndex, FaceSchema.hairValIndex),
                 vm = vm,
+                vals = faceVals,
                 onShowChart = { chartSet = "hair_color" },
             )
         }
@@ -137,6 +141,7 @@ fun FaceScreen(vm: TrainerViewModel) {
                 labels = listOf("色相", "饱和", "明暗"),
                 indices = listOf(FaceSchema.eyeHueIndex, FaceSchema.eyeSatIndex, FaceSchema.eyeValIndex),
                 vm = vm,
+                vals = faceVals,
                 onShowChart = { chartSet = "eye_color" },
             )
         }
@@ -146,6 +151,7 @@ fun FaceScreen(vm: TrainerViewModel) {
                 labels = listOf("饱和", "明暗"),
                 indices = listOf(FaceSchema.skinSatIndex, FaceSchema.skinValIndex),
                 vm = vm,
+                vals = faceVals,
             )
         }
 
@@ -244,24 +250,25 @@ private fun ColorRow(
     labels: List<String>,
     indices: List<Int>,
     vm: TrainerViewModel,
+    vals: Map<Int, Long?>,
     onShowChart: (() -> Unit)? = null,
 ) {
-    val values = indices.map { vm.currentFaceValue(it) }
+    val values = indices.map { vals[it] }
     // 游戏内颜色映射：镜像色相 + sat/val 按 200 归一（社区色表实证，见 GameColor）
     val hsv = when (title) {
         "瞳色" -> GameColor.stdHsv(
-            vm.currentFaceValue(FaceSchema.eyeHueIndex) ?: 0,
-            vm.currentFaceValue(FaceSchema.eyeSatIndex) ?: 0,
-            vm.currentFaceValue(FaceSchema.eyeValIndex) ?: 0,
+            vals[FaceSchema.eyeHueIndex] ?: 0,
+            vals[FaceSchema.eyeSatIndex] ?: 0,
+            vals[FaceSchema.eyeValIndex] ?: 0,
         )
         "发色" -> GameColor.stdHsv(
-            vm.currentFaceValue(FaceSchema.hairHueIndex) ?: 0,
-            vm.currentFaceValue(FaceSchema.hairSatIndex) ?: 0,
-            vm.currentFaceValue(FaceSchema.hairValIndex) ?: 0,
+            vals[FaceSchema.hairHueIndex] ?: 0,
+            vals[FaceSchema.hairSatIndex] ?: 0,
+            vals[FaceSchema.hairValIndex] ?: 0,
         )
         else -> GameColor.skinStdHsv(
-            vm.currentFaceValue(FaceSchema.skinSatIndex) ?: 0,
-            vm.currentFaceValue(FaceSchema.skinValIndex) ?: 0,
+            vals[FaceSchema.skinSatIndex] ?: 0,
+            vals[FaceSchema.skinValIndex] ?: 0,
         )
     }
     val swatch = android.graphics.Color.HSVToColor(hsv)

@@ -50,6 +50,14 @@ fun AttrScreen(vm: TrainerViewModel) {
         return
     }
     val person = state.currentPerson ?: return
+    // 关键：在 body（已订阅 state）里取值并下传；CharRow 内部直接读 StateFlow 不会被 Compose 跟踪，
+    // 会导致切换角色后数值不刷新（v0.1.6 bug）。
+    val pending = state.pending
+    fun currentValue(slot: CharMap.CharSlot): Long? {
+        pending["char:${person.recordIndex}:${slot.key}"]?.let { return it }
+        return CharMap.valueOf(person, slot)
+    }
+    val values = CharMap.slots.associate { it.key to currentValue(it) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -72,7 +80,14 @@ fun AttrScreen(vm: TrainerViewModel) {
         item { PersonPickerCard(state = state, vm = vm) }
 
         items(CharMap.slots) { slot ->
-            CharRow(vm = vm, slotKey = slot.key, label = slot.name, max = slot.max)
+            CharRow(
+                vm = vm,
+                slotKey = slot.key,
+                label = slot.name,
+                desc = slot.desc,
+                max = slot.max,
+                current = values[slot.key],
+            )
         }
 
         item {
@@ -109,16 +124,22 @@ private fun CharRow(
     vm: TrainerViewModel,
     slotKey: String,
     label: String,
+    desc: String,
     max: Long,
+    current: Long?,
 ) {
-    val current = vm.currentCharValue(slotKey)
     var draft by remember(slotKey, current) { mutableStateOf(current?.toString() ?: "") }
 
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(label, fontWeight = FontWeight.Medium)
-                Text("当前：${current ?: "—"}", style = MaterialTheme.typography.bodySmall)
+                Text(desc, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "游戏内数值：${current ?: "—"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
             OutlinedButton(onClick = {
                 val v = ((current ?: 0) - 10).coerceIn(0, max)
