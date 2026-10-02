@@ -123,7 +123,7 @@ class CharMapTest {
         assertEquals(4, CharMap.stageOptions(2).size)
         assertEquals("大圆满", CharMap.stageOptions(6)[3L])
         assertEquals(10, CharMap.stageOptions(0).size)
-        assertEquals("第十层", CharMap.stageOptions(1)[9L])
+        assertEquals("第10层", CharMap.stageOptions(1)[9L])
         assertEquals(emptyMap<Long, String>(), CharMap.stageOptions(-1))
         assertEquals(emptyMap<Long, String>(), CharMap.stageOptions(null))
         assertEquals("凡人", CharMap.realmName(-1))
