@@ -53,6 +53,8 @@ data class UiState(
     val strayFiles: List<String> = emptyList(),
     /** 用户标记的主角 charId（持久化）；未标记为 null */
     val markedCharId: Long? = null,
+    /** 用户给角色的命名（charId → 别名，持久化在本机 prefs，不写入存档） */
+    val aliases: Map<Long, String> = emptyMap(),
 ) {
     val faceReady: Boolean get() = faceRecord != null || rawFaceOffset != null
     val isTree: Boolean get() = structure?.tree != null
@@ -192,6 +194,7 @@ class TrainerViewModel : ViewModel() {
                 }
                 AppLog.i("openSlot ${slot.slot}: container=${st.format} inner=${st.innerBytes.size} persons=${st.persons.size} face=${face != null} rawFace=${rawFace != null} records=${st.records.size}")
                 val marked = readMarkedCharId(ctx)
+                val aliasMap = readAliases(ctx)
                 val msg = if (running) "⚠️ 游戏正在运行，修改会被覆盖！\n$baseMsg" else baseMsg
                 _state.value = _state.value.copy(
                     loading = false,
@@ -207,6 +210,7 @@ class TrainerViewModel : ViewModel() {
                     rawCharOffset = rawChar,
                     selectedPerson = markedIndex(st.persons, marked),
                     markedCharId = marked,
+                    aliases = aliasMap,
                     pending = emptyMap(),
                     backupPath = null,
                 )
@@ -222,6 +226,34 @@ class TrainerViewModel : ViewModel() {
             ctx.getSharedPreferences("dsh_prefs", Context.MODE_PRIVATE).getLong("protagonist_char_id", -1L)
         }.getOrDefault(-1L)
         return if (id > 0) id else null
+    }
+
+    /** 读取全部角色别名（prefs 键 alias_<charId>）。 */
+    private fun readAliases(ctx: Context): Map<Long, String> {
+        return runCatching {
+            val all = ctx.getSharedPreferences("dsh_prefs", Context.MODE_PRIVATE).all
+            val out = LinkedHashMap<Long, String>()
+            all.forEach { (k, v) ->
+                if (k.startsWith("alias_") && v is String && v.isNotBlank()) {
+                    k.removePrefix("alias_").toLongOrNull()?.let { out[it] = v }
+                }
+            }
+            out
+        }.getOrDefault(emptyMap())
+    }
+
+    /** 给角色命名（空串=清除）。仅存本机 prefs，便于查找，不写入存档。 */
+    fun setAlias(ctx: Context, charId: Long, name: String) {
+        runCatching {
+            val prefs = ctx.getSharedPreferences("dsh_prefs", Context.MODE_PRIVATE)
+            val key = "alias_$charId"
+            if (name.isBlank()) prefs.edit().remove(key).apply()
+            else prefs.edit().putString(key, name.trim()).apply()
+        }
+        AppLog.i("setAlias: charId=$charId name=$name")
+        val next = _state.value.aliases.toMutableMap()
+        if (name.isBlank()) next.remove(charId) else next[charId] = name.trim()
+        _state.value = _state.value.copy(aliases = next)
     }
 
     private fun markedIndex(persons: List<PersonFinder.PersonRecord>, marked: Long?): Int {
@@ -496,8 +528,11 @@ class TrainerViewModel : ViewModel() {
                     "charFields: realm=${CharMap.realmOf(it)} stage=${CharMap.stageOf(it)} life=${CharMap.valueOf(it, CharMap.slot("life")!!)}" +
                         " lifeMaxDerived=${CharMap.lifeMaxOf(it)} qiRaw=${CharMap.rawValueOf(it, CharMap.slot("qi")!!)}" +
                         " qi=${CharMap.valueOf(it, CharMap.slot("qi")!!)} qiMaxDerived=${CharMap.qiMaxOf(it)}" +
-                        " power=${CharMap.valueOf(it, CharMap.slot("power")!!)} bt=${CharMap.breakthroughOf(it)}" +
-                        " birth=${CharMap.birthOf(it)} roots=${CharMap.rootsString(it)}",
+                        " power=${CharMap.valueOf(it, CharMap.slot("power")!!)}" +
+                        " birth=${CharMap.birthOf(it)} gender=${CharMap.valueOf(it, CharMap.slot("gender")!!)}" +
+                        " location=${CharMap.valueOf(it, CharMap.slot("location")!!)} sect=${CharMap.valueOf(it, CharMap.slot("sect")!!)}" +
+                        " race=${CharMap.valueOf(it, CharMap.slot("race")!!)} rootType=${CharMap.rootTypeOf(it)}" +
+                        " rootFlags=${CharMap.rootFlagsOf(it)} roots=${CharMap.rootsString(it)}",
                 )
             }
             appendLine("--- 模块列表 ---")

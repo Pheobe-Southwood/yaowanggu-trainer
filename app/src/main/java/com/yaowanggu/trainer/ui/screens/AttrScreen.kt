@@ -11,11 +11,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -35,8 +35,8 @@ import com.yaowanggu.trainer.data.CharMap
 import com.yaowanggu.trainer.ui.TrainerViewModel
 
 /**
- * 属性页：v0.1.10 校准字段（寿元前数 face−49、灵气 face−20 ×100 定点、武力 face−19）可写；
- * 寿元上限/灵气上限由境界派生（存档不存储），境界/突破几率/生日/灵根只读展示，与游戏面板逐 chip 对齐。
+ * 属性页（v0.1.11）：数值（寿元/灵气/武力）+ 进阶属性（生日/性别/所在地/门派/种族/境界/阶段/灵根）可写；
+ * 上限随 (境界, 阶段) 派生显示；突破几率/渡劫死亡率为游戏侧计算值，不展示。
  */
 @Composable
 fun AttrScreen(vm: TrainerViewModel) {
@@ -50,82 +50,102 @@ fun AttrScreen(vm: TrainerViewModel) {
         return
     }
     val person = state.currentPerson ?: return
-    // 关键：在 body（已订阅 state）里取值并下传；CharRow 内部直接读 StateFlow 不会被 Compose 跟踪，
-    // 会导致切换角色后数值不刷新（v0.1.6 bug）。
+    // 关键：在 body（已订阅 state）里取值并下传；子 composable 内部直接读 StateFlow 不会被 Compose 跟踪。
     val pending = state.pending
     fun currentValue(slot: CharMap.CharSlot): Long? {
         pending["char:${person.recordIndex}:${slot.key}"]?.let { return it }
         return CharMap.valueOf(person, slot)
     }
-    val values = CharMap.slots.associate { it.key to currentValue(it) }
-
-    // 派生展示（只读）：上限不存储，由境界查表；未验证的境界显示 —
-    val realm = CharMap.realmOf(person)
-    val lifeMax = CharMap.lifeMaxFor(realm)
-    val qiMax = CharMap.qiMaxFor(realm)
-    val birth = CharMap.birthOf(person)
+    val alias = state.aliases[person.charId]
+    val lifeMax = CharMap.lifeMaxOf(person)
+    val qiMax = CharMap.qiMaxOf(person)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("角色属性（v0.1.10 校准）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "角色 ID ${person.charId} · 记录 #${person.recordIndex} · 寿元 face−49、灵气 face−20（×100 定点）、武力 face−19",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        "数值应与游戏内属性面板一致；上限随境界派生（存档不存储）。如仍不一致请导出诊断包发我。",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    buildString {
+                        alias?.let { append("$it　") }
+                        append("ID ${person.charId}")
+                        if (state.markedCharId == person.charId) append(" ★")
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    CharMap.realmText(person),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
 
         item { PersonPickerCard(state = state, vm = vm) }
 
-        items(CharMap.slots) { slot ->
-            val suffix = when (slot.key) {
-                "life" -> "/${lifeMax ?: "—"}"
-                "qi" -> qiMax?.let { "/$it" } ?: ""
-                "power" -> values["power"]?.let { "/$it" } ?: ""
-                else -> ""
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("life", "qi", "power").forEach { key ->
+                        val slot = CharMap.slot(key)!!
+                        val current = currentValue(slot)
+                        val suffix = when (key) {
+                            "life" -> "/${lifeMax ?: "—"}"
+                            "qi" -> qiMax?.let { "/$it" } ?: ""
+                            else -> current?.let { "/$it" } ?: ""
+                        }
+                        val displayMax = if (key == "qi") qiMax ?: (slot.max / slot.scale) else slot.max
+                        NumRow(
+                            label = slot.name,
+                            hint = slot.desc,
+                            max = displayMax,
+                            current = current,
+                            suffix = suffix,
+                            onStage = { v -> vm.stageCharEdit(key, v) },
+                        )
+                    }
+                }
             }
-            val displayMax = when (slot.key) {
-                "qi" -> qiMax ?: (slot.max / slot.scale)
-                else -> slot.max
-            }
-            CharRow(
-                vm = vm,
-                slotKey = slot.key,
-                label = slot.name,
-                desc = slot.desc,
-                max = displayMax,
-                current = values[slot.key],
-                suffix = suffix,
-                editable = slot.editable,
-            )
         }
 
         item {
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("面板对照（只读·派生）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(4.dp))
-                    InfoRow("境界", CharMap.realmText(person))
-                    InfoRow("寿元上限", lifeMax?.toString() ?: "—（该境界未验证，不臆造）")
-                    InfoRow("灵气上限", qiMax?.toString() ?: "—（该境界未验证，不臆造）")
-                    InfoRow("突破几率", CharMap.breakthroughOf(person)?.let { "$it%" } ?: "—")
-                    InfoRow("生日", if (birth.first != null) "${birth.first}月${birth.second ?: 0}日" else "—")
-                    InfoRow("灵根", CharMap.rootsString(person))
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "上限/境界/灵根等在存档中无独立存储字段（或仅随境界派生），故只读；强行写 face−62 等旧偏移游戏内无效。",
-                        style = MaterialTheme.typography.bodySmall,
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("进阶属性", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                    val effRealm = currentValue(CharMap.slot("realm")!!) ?: CharMap.realmOf(person)
+                    EnumRow("性别", CharMap.slot("gender")!!.enumLabels, currentValue(CharMap.slot("gender")!!)) {
+                        vm.stageCharEdit("gender", it)
+                    }
+                    EnumRow("境界", CharMap.slot("realm")!!.enumLabels, currentValue(CharMap.slot("realm")!!)) {
+                        vm.stageCharEdit("realm", it)
+                    }
+                    EnumRow("阶段", CharMap.stageOptions(effRealm), currentValue(CharMap.slot("stage")!!)) {
+                        vm.stageCharEdit("stage", it)
+                    }
+                    EnumRow("种族", CharMap.slot("race")!!.enumLabels, currentValue(CharMap.slot("race")!!)) {
+                        vm.stageCharEdit("race", it)
+                    }
+                    NumRow(
+                        label = "生日·月", hint = "1-12", max = 12,
+                        current = currentValue(CharMap.slot("birthM")!!), suffix = "月",
+                        onStage = { vm.stageCharEdit("birthM", it) },
+                    )
+                    NumRow(
+                        label = "生日·日", hint = "1-31", max = 31,
+                        current = currentValue(CharMap.slot("birthD")!!), suffix = "日",
+                        onStage = { vm.stageCharEdit("birthD", it) },
+                    )
+                    NumRow(
+                        label = "所在地", hint = CharMap.slot("location")!!.hint, max = 999,
+                        current = currentValue(CharMap.slot("location")!!), suffix = "",
+                        onStage = { vm.stageCharEdit("location", it) },
+                    )
+                    NumRow(
+                        label = "门派", hint = CharMap.slot("sect")!!.hint, max = 999,
+                        current = currentValue(CharMap.slot("sect")!!), suffix = "",
+                        onStage = { vm.stageCharEdit("sect", it) },
                     )
                 }
             }
@@ -133,19 +153,37 @@ fun AttrScreen(vm: TrainerViewModel) {
 
         item {
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("未映射字段", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("灵根", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                    val flagSlots = CharMap.rootFlagSlots
+                    val effFlags = flagSlots.map { currentValue(it) ?: 0L }
+                    val effType = currentValue(CharMap.slot("rootType")!!)
                     Text(
-                        "灵石/库存/贡献度等位于加密模块（nfile0–4），当前无法安全读写，暂不开放；" +
-                            "后续版本如取得解密线索再扩展。",
-                        style = MaterialTheme.typography.bodySmall,
+                        CharMap.rootsStringFrom(effFlags, effType),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        flagSlots.take(4).forEachIndexed { i, slot ->
+                            RootChip(slot.name, (effFlags.getOrNull(i) ?: 0L) != 0L) { on ->
+                                vm.stageCharEdit(slot.key, if (on) 1 else 0)
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        flagSlots.drop(4).forEachIndexed { i, slot ->
+                            RootChip(slot.name, (effFlags.getOrNull(i + 4) ?: 0L) != 0L) { on ->
+                                vm.stageCharEdit(slot.key, if (on) 1 else 0)
+                            }
+                        }
+                    }
+                    EnumRow("总纲", CharMap.slot("rootType")!!.enumLabels, effType) { vm.stageCharEdit("rootType", it) }
                 }
             }
         }
 
         item {
-            Divider(Modifier.padding(vertical = 8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.writeBack(context) }, enabled = state.pending.isNotEmpty() && !state.loading) {
                     Text("写回存档（${state.pending.size} 项修改）")
@@ -160,73 +198,76 @@ fun AttrScreen(vm: TrainerViewModel) {
     }
 }
 
+/** 数值行：当前值 + ±10 + 输入写入。 */
 @Composable
-private fun InfoRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(72.dp))
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Medium,
-        )
+private fun NumRow(
+    label: String,
+    hint: String,
+    max: Long,
+    current: Long?,
+    suffix: String,
+    onStage: (Long) -> Unit,
+) {
+    var draft by remember(label, current) { mutableStateOf(current?.toString() ?: "") }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, modifier = Modifier.width(64.dp), fontWeight = FontWeight.Medium)
+            Text(
+                "${current ?: "—"}$suffix",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedButton(onClick = {
+                val v = ((current ?: 0) - 10).coerceIn(0, max)
+                onStage(v); draft = v.toString()
+            }) { Text("−10") }
+            OutlinedButton(onClick = {
+                val v = ((current ?: 0) + 10).coerceIn(0, max)
+                onStage(v); draft = v.toString()
+            }) { Text("+10") }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it.filter { c -> c.isDigit() }.take(9) },
+                label = { Text("改成") },
+                singleLine = true,
+                modifier = Modifier.weight(1f).padding(start = 72.dp),
+            )
+            Button(onClick = { draft.toLongOrNull()?.let { onStage(it.coerceIn(0, max)) } }) { Text("写入") }
+        }
+        if (hint.isNotEmpty()) {
+            Text(hint, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 72.dp))
+        }
     }
 }
 
+/** 枚举行：当前标签 + 下拉选择。选项为空（如凡人阶段）时禁用。 */
 @Composable
-private fun CharRow(
-    vm: TrainerViewModel,
-    slotKey: String,
+private fun EnumRow(
     label: String,
-    desc: String,
-    max: Long,
+    options: Map<Long, String>,
     current: Long?,
-    suffix: String = "",
-    editable: Boolean = true,
+    onPick: (Long) -> Unit,
 ) {
-    var draft by remember(slotKey, current) { mutableStateOf(current?.toString() ?: "") }
-
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text(label, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(2.dp))
-            Text(desc, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "游戏内：${current ?: "—"}$suffix",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                if (editable) {
-                    OutlinedButton(onClick = {
-                        val v = ((current ?: 0) - 10).coerceIn(0, max)
-                        vm.stageCharEdit(slotKey, v)
-                        draft = v.toString()
-                    }) { Text("−10") }
-                    OutlinedButton(onClick = {
-                        val v = ((current ?: 0) + 10).coerceIn(0, max)
-                        vm.stageCharEdit(slotKey, v)
-                        draft = v.toString()
-                    }) { Text("+10") }
-                }
+    var expanded by remember(label) { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, modifier = Modifier.width(64.dp), fontWeight = FontWeight.Medium)
+        Box {
+            OutlinedButton(onClick = { expanded = true }, enabled = options.isNotEmpty()) {
+                Text(options[current] ?: current?.toString() ?: "—")
             }
-            if (editable) {
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { draft = it.filter { c -> c.isDigit() }.take(9) },
-                        label = { Text("改成") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(onClick = {
-                        draft.toLongOrNull()?.let { vm.stageCharEdit(slotKey, it.coerceIn(0, max)) }
-                    }) { Text("写入修改") }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (v, lbl) ->
+                    DropdownMenuItem(text = { Text(lbl) }, onClick = { expanded = false; onPick(v) })
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RootChip(label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+    FilterChip(selected = checked, onClick = { onToggle(!checked) }, label = { Text(label.removeSuffix("灵根")) })
 }

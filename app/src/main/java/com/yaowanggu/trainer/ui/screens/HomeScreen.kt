@@ -128,9 +128,9 @@ fun HomeScreen(vm: TrainerViewModel, onOpenFace: () -> Unit) {
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("③ 数据模块（同一存档的组成部分）", style = MaterialTheme.typography.titleMedium)
+                    Text("③ 数据模块", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
-                    Text("游戏把一份存档拆成 nfile0..31 多个数据模块批量读写（mtime 全部相同）。刷新后已自动扫描并打开「外观模块」（含角色五官数据，带徽标）；也可手动查看其它模块。", style = MaterialTheme.typography.bodySmall)
+                    Text("带徽标的是外观模块（角色数据），已自动打开。", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
