@@ -27,7 +27,7 @@ object FaceSchema {
         FaceField(4, "眼睛", 12, FaceField.Kind.OPTION),
         FaceField(5, "嘴巴", 12, FaceField.Kind.OPTION),
         FaceField(6, "鼻子", 8, FaceField.Kind.OPTION),
-        FaceField(7, "前发", 12, FaceField.Kind.OPTION),
+        FaceField(7, "前发", 16, FaceField.Kind.OPTION),
         FaceField(8, "后发", 12, FaceField.Kind.OPTION),
         FaceField(9, "性格", 9, FaceField.Kind.TRAIT),
         FaceField(10, "痣", 3, FaceField.Kind.MOLE),

@@ -295,13 +295,14 @@ private fun ColorRow(
             Spacer(Modifier.height(6.dp))
             indices.forEachIndexed { i, idx ->
                 val cur = values[i]
+                val maxVal = FaceSchema.byIndex(idx)?.max?.toLong() ?: 400L
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
                     Text("${labels[i]}（${idx}）", modifier = Modifier.width(110.dp), style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = { vm.stageFaceEdit(idx, ((cur ?: 0L) - 10).coerceAtLeast(0)) }) { Text("−10") }
                     Spacer(Modifier.width(4.dp))
                     Text("${cur ?: "—"}", modifier = Modifier.width(48.dp))
                     Spacer(Modifier.width(4.dp))
-                    OutlinedButton(onClick = { vm.stageFaceEdit(idx, ((cur ?: 0L) + 10)) }) { Text("+10") }
+                    OutlinedButton(onClick = { vm.stageFaceEdit(idx, ((cur ?: 0L) + 10).coerceAtMost(maxVal)) }) { Text("+10") }
                 }
             }
         }

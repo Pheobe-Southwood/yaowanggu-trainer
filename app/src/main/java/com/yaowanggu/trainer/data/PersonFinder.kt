@@ -4,16 +4,15 @@ import com.yaowanggu.trainer.data.msgpack.MpValue
 import com.yaowanggu.trainer.data.schema.FaceSchema
 
 /**
- * 结构化角色定位器（依据 2026-09 真机诊断包实证）：
+ * 结构化角色定位器（依据 2026-09/10 真机诊断包实证）：
  *
- * 外观模块（nfile30）= msgpack 根数组，含 347 条变长 int 记录（每角色一条）；
- * 每条记录尾部附近有一个 20 字段五官窗口，且 窗口[0] == 记录索引+1（角色 ID），347/347 验证通过。
- * 五官窗口之前是角色前缀数据（含疑似 灵气/武力 等大数）。
+ * 外观模块（nfile30）= msgpack 根数组，含 300+ 条变长 int 记录（每角色一条）；
+ * 每条记录尾部附近有一个 20 字段五官窗口，且 窗口[0] == 记录索引+1（角色 ID）。
+ * 五官窗口之前是角色前缀数据（含灵气/武力等数值）。
  *
  * 定位规则（按优先级）：
- * 1. ID 锚定：从记录尾部向前找 window[0] == recordIndex+1 且字段全部落在 FaceSchema 严格范围内的窗口；
- * 2. 严格范围兜底：window[0] >= 1、痣<=3、性格<=9、鼻<=8、选项<=12、色相<=360、饱和/明暗<=400、
- *    非全零、发色或瞳色色相 > 0。
+ * 1. ID 锚定：从记录尾部向前找 window[0] == recordIndex+1 且落在五官合理容错范围内的窗口；
+ * 2. 范围兜底：window[0] >= 1、部件<=30、颜色<=1000、非全零退化窗口。
  * 只有当多数记录都命中时才认定为「角色模块」，避免把普通 int 数组误判为角色记录。
  */
 object PersonFinder {
@@ -81,20 +80,20 @@ object PersonFinder {
         return out
     }
 
-    /** FaceSchema 严格范围 + 非退化校验。 */
+    /** FaceSchema 范围容错 + 非退化校验。 */
     private fun faceStrict(w: List<Long?>): Boolean {
         if (w.size < FaceSchema.count) return false
         val limits = intArrayOf(
             999_999,          // 1 ID
-            12, 12, 12, 12,   // 脸型 眉毛 眼睛 嘴巴
-            8,                // 鼻子
-            12, 12,           // 前发 后发
-            9,                // 性格
-            3,                // 痣
-            400, 400,         // 肤色 饱和/明暗
-            360, 400, 400,    // 发色 色相/饱和/明暗
-            360, 400, 400,    // 瞳色 色相/饱和/明暗
-            12, 12,           // 幼前发 幼后发
+            30, 30, 30, 30,   // 脸型 眉毛 眼睛 嘴巴
+            30,               // 鼻子
+            30, 30,           // 前发 后发
+            30,               // 性格
+            30,               // 痣
+            1000, 1000,       // 肤色 饱和/明暗
+            1000, 1000, 1000, // 发色 色相/饱和/明暗（允许历史越界值如 440）
+            1000, 1000, 1000, // 瞳色 色相/饱和/明暗
+            30, 30,           // 幼前发 幼后发
         )
         for (i in 0 until FaceSchema.count) {
             val x = w[i] ?: return false
@@ -103,7 +102,6 @@ object PersonFinder {
         val id = w[0] ?: return false
         if (id < 1) return false                       // 角色 ID 从 1 起
         if (w.subList(1, FaceSchema.count).all { it == 0L }) return false // 拒绝全零退化窗口
-        if ((w[12] ?: 0) == 0L && (w[15] ?: 0) == 0L) return false        // 发色/瞳色色相至少一个非零
         return true
     }
 }

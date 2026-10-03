@@ -15,6 +15,7 @@ import com.yaowanggu.trainer.data.codec.SaveCodec
 import com.yaowanggu.trainer.data.export.DiagExporter
 import com.yaowanggu.trainer.data.SaveEditor
 import com.yaowanggu.trainer.data.SaveStructure
+import com.yaowanggu.trainer.data.schema.FaceSchema
 import com.yaowanggu.trainer.shizuku.ShellBackend
 import com.yaowanggu.trainer.shizuku.ShizukuRepository
 import com.yaowanggu.trainer.util.AppLog
@@ -335,8 +336,10 @@ class TrainerViewModel : ViewModel() {
 
     /** Stage an edit (not yet written). */
     fun stageFaceEdit(fieldNo: Int, value: Long) {
+        val maxVal = FaceSchema.byIndex(fieldNo)?.max?.toLong() ?: 400L
+        val clamped = value.coerceIn(0L, maxVal)
         val k = faceKeyPrefix() + fieldNo
-        _state.value = _state.value.copy(pending = _state.value.pending + (k to value))
+        _state.value = _state.value.copy(pending = _state.value.pending + (k to clamped))
     }
 
     /** 属性编辑键：char:<recordIndex>:<slotKey>，定位到选中角色记录内的校准偏移。 */

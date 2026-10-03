@@ -56,7 +56,7 @@ jobs:
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: yaowanggu-trainer-release
+          name: yaowanggu-trainer-release-signed
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
@@ -70,18 +70,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download APK artifacts
+      - name: Download Release APK artifact
         uses: actions/download-artifact@v4
         with:
-          path: dist
+          name: yaowanggu-trainer-release-signed
+          path: dist/yaowanggu-trainer-release-signed
 
-      - name: Flatten artifacts
+      - name: Flatten release artifact
         run: |
           mkdir -p out
           VER="${GITHUB_REF_NAME#v}"
-          for d in dist/*/; do
-            n="$(basename "$d")"; n="${n#yaowanggu-trainer-}"
-            for f in "$d"*.apk; do cp "$f" "out/yaowanggu-trainer-${VER}-${n}.apk"; done
+          for f in dist/yaowanggu-trainer-release-signed/*.apk; do
+            cp "$f" "out/yaowanggu-trainer-${VER}-release-signed.apk"
           done
           ls -la out
           test -n "$(ls -A out)"

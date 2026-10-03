@@ -101,4 +101,61 @@ class PersonFinderTest {
         assertEquals(records[0].subList(records[0].size - 23, records[0].size - 3), bf.values)
         assertEquals(0, st.persons[0].recordIndex)
     }
+
+    @Test
+    fun findsPersonWithExceededColorVal() {
+        // 模拟用户诊断包中主角（ID 1）：发色明暗被改到了 440
+        val records = (0 until 8).map { i ->
+            val r = personRecord(i).toMutableList()
+            if (i == 0) {
+                // 将发色明暗（倒数第 9 项：size-3 为 0L，size-4 为 412500，size-5 为 1604748，size-6 为幼后发... size-11 为发色明暗）
+                val faceStart = r.size - 23
+                r[faceStart + 14] = 440L // 发色明暗超限至 440
+            }
+            r.toList()
+        }
+        val persons = PersonFinder.findPersons(treeOf(records))
+        assertEquals(8, persons.size)
+        val p0 = persons.firstOrNull { it.charId == 1L }
+        org.junit.Assert.assertNotNull("主角（ID 1）必须能被正常定位", p0)
+        assertEquals(440L, p0!!.faceValues[14])
+    }
+
+    @Test
+    fun findsPersonWithBothHueZero() {
+        // 模拟 NPC #332（ID 333）：发色色相与瞳色色相均为 0（纯黑发/红瞳等正常角色）
+        val records = (0 until 8).map { i ->
+            val r = personRecord(i).toMutableList()
+            if (i == 1) {
+                val faceStart = r.size - 23
+                r[faceStart + 12] = 0L // 发色色相 0
+                r[faceStart + 15] = 0L // 瞳色色相 0
+            }
+            r.toList()
+        }
+        val persons = PersonFinder.findPersons(treeOf(records))
+        assertEquals(8, persons.size)
+        val p1 = persons.firstOrNull { it.charId == 2L }
+        org.junit.Assert.assertNotNull(p1)
+        assertEquals(0L, p1!!.faceValues[12])
+        assertEquals(0L, p1.faceValues[15])
+    }
+
+    @Test
+    fun findsPersonWithHairFront14() {
+        // 模拟 NPC #61（ID 62）：前发为 14
+        val records = (0 until 8).map { i ->
+            val r = personRecord(i).toMutableList()
+            if (i == 2) {
+                val faceStart = r.size - 23
+                r[faceStart + 6] = 14L // 前发 14
+            }
+            r.toList()
+        }
+        val persons = PersonFinder.findPersons(treeOf(records))
+        assertEquals(8, persons.size)
+        val p2 = persons.firstOrNull { it.charId == 3L }
+        org.junit.Assert.assertNotNull(p2)
+        assertEquals(14L, p2!!.faceValues[6])
+    }
 }

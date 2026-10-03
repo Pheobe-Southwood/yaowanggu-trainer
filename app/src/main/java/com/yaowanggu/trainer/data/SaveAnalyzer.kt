@@ -148,17 +148,16 @@ object SaveAnalyzer {
                 FaceField.Kind.OPTION -> x in 0..f.max
                 FaceField.Kind.TRAIT -> x in 0..f.max
                 FaceField.Kind.MOLE -> x in 0..f.max
-                FaceField.Kind.HUE -> x in 0..400
-                FaceField.Kind.SAT_VAL -> x in 0..400
+                FaceField.Kind.HUE -> x in 0..1000
+                FaceField.Kind.SAT_VAL -> x in 0..1000
             }
             if (ok) score++
         }
-        if ((v[12] ?: -1) in 0..400 && (v[13] ?: -1) in 0..400 && (v[14] ?: -1) in 0..400) score += 2
-        if ((v[15] ?: -1) in 0..400 && (v[16] ?: -1) in 0..400 && (v[17] ?: -1) in 0..400) score += 2
-        // 退化窗口降权：全零 / 无 ID / 无色相信息的窗口不是真脸（实证：会压过真窗口）
+        if ((v[12] ?: -1) in 0..1000 && (v[13] ?: -1) in 0..1000 && (v[14] ?: -1) in 0..1000) score += 2
+        if ((v[15] ?: -1) in 0..1000 && (v[16] ?: -1) in 0..1000 && (v[17] ?: -1) in 0..1000) score += 2
+        // 退化窗口降权：全零 / 无 ID 的窗口不是真脸（实证：会压过真窗口）
         if (v.subList(1, FaceSchema.count).all { (it ?: 0L) == 0L }) score -= 8
         if ((v[0] ?: 0) < 1) score -= 4
-        if ((v[12] ?: 0) == 0L && (v[15] ?: 0) == 0L) score -= 4
         return score
     }
 
